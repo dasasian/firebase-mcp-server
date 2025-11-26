@@ -1,0 +1,206 @@
+{
+  "schemas": {
+    "/users/{userId}": {
+      "description": "User account documents",
+      "schema": {
+        "type": "object",
+        "required": ["id", "email", "username", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique user ID"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 30
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "avatarUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["admin", "author", "reader"],
+            "default": "reader"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-status": "experimental",
+            "x-since": "2024-11-01"
+          }
+        }
+      },
+      "timestampFields": ["createdAt", "updatedAt", "lastLoginAt"],
+      "validationMode": "warn"
+    },
+
+    "/posts/{postId}": {
+      "description": "Blog post documents",
+      "schema": {
+        "type": "object",
+        "required": ["id", "title", "content", "authorId", "status", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "content": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "published", "archived"]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": "string",
+            "x-status": "legacy",
+            "x-deprecated": "2024-10-01",
+            "x-replacedBy": "categoryId",
+            "x-description": "Old string-based category, use categoryId instead"
+          },
+          "categoryId": {
+            "type": "string",
+            "x-status": "official"
+          },
+          "viewCount": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "featuredImage": {
+            "type": "string",
+            "format": "uri"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "timestampFields": ["publishedAt", "createdAt", "updatedAt"],
+      "validationMode": "warn"
+    },
+
+    "/posts/{postId}/comments/{commentId}": {
+      "description": "Comments on blog posts",
+      "schema": {
+        "type": "object",
+        "required": ["id", "postId", "authorId", "content", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "postId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "isEdited": {
+            "type": "boolean",
+            "default": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "timestampFields": ["createdAt", "updatedAt"]
+    },
+
+    "/categories/{categoryId}": {
+      "description": "Blog categories",
+      "schema": {
+        "type": "object",
+        "required": ["id", "name", "slug"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "postCount": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "validationMode": "strict"
+    }
+  },
+
+  "collectionGroups": {
+    "comments": {
+      "description": "All comments across all posts"
+    }
+  }
+}

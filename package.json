@@ -1,0 +1,47 @@
+{
+  "name": "firebase-mcp-server",
+  "version": "1.0.0",
+  "description": "General-purpose MCP server for Firebase (Firestore, Storage, Auth) with schema-driven validation and context-efficient tools",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "firebase-mcp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "dev": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
+    "test": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "firestore",
+    "firebase",
+    "schema-validation",
+    "claude-code",
+    "model-context-protocol"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^2.1.1",
+    "commander": "^11.0.0",
+    "diff": "^5.1.0",
+    "firebase-admin": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.0.9",
+    "@types/json-schema": "^7.0.15",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
