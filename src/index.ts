@@ -41,6 +41,7 @@ import { firebaseAuthListUsers, firebaseAuthListUsersTool } from './tools/auth/l
 import { firebaseAuthGetUser, firebaseAuthGetUserTool } from './tools/auth/get-user.js';
 import { firebaseAuthUpdateUser, firebaseAuthUpdateUserTool } from './tools/auth/update-user.js';
 import { firebaseAuthDeleteUser, firebaseAuthDeleteUserTool } from './tools/auth/delete-user.js';
+import { firebaseAuthRevokeSessions, firebaseAuthRevokeSessionsTool } from './tools/auth/revoke-sessions.js';
 
 /**
  * Main server instance
@@ -84,6 +85,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       firebaseAuthGetUserTool,
       firebaseAuthUpdateUserTool,
       firebaseAuthDeleteUserTool,
+      firebaseAuthRevokeSessionsTool,
     ],
   };
 });
@@ -368,6 +370,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(await firebaseAuthDeleteUser(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_revoke_sessions':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthRevokeSessions(args as any), null, 2),
             },
           ],
         };
