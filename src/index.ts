@@ -35,6 +35,13 @@ import { firestoreStats, firestoreStatsTool } from './tools/stats.js';
 import { firestoreQueryCollectionGroup, firestoreQueryCollectionGroupTool } from './tools/query-collection-group.js';
 import { firestoreShowCollections, firestoreShowCollectionsTool } from './tools/show-collections.js';
 
+// Import Firebase Auth tools
+import { firebaseAuthCreateUser, firebaseAuthCreateUserTool } from './tools/auth/create-user.js';
+import { firebaseAuthListUsers, firebaseAuthListUsersTool } from './tools/auth/list-users.js';
+import { firebaseAuthGetUser, firebaseAuthGetUserTool } from './tools/auth/get-user.js';
+import { firebaseAuthUpdateUser, firebaseAuthUpdateUserTool } from './tools/auth/update-user.js';
+import { firebaseAuthDeleteUser, firebaseAuthDeleteUserTool } from './tools/auth/delete-user.js';
+
 /**
  * Main server instance
  */
@@ -71,6 +78,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       firestoreCountTool,
       firestoreSumTool,
       firestoreStatsTool,
+      // Firebase Auth tools
+      firebaseAuthCreateUserTool,
+      firebaseAuthListUsersTool,
+      firebaseAuthGetUserTool,
+      firebaseAuthUpdateUserTool,
+      firebaseAuthDeleteUserTool,
     ],
   };
 });
@@ -305,6 +318,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(await firestoreStats(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_create_user':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthCreateUser(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_list_users':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthListUsers(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_get_user':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthGetUser(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_update_user':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthUpdateUser(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_auth_delete_user':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseAuthDeleteUser(args as any), null, 2),
             },
           ],
         };
