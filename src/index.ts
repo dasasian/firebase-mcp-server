@@ -26,6 +26,7 @@ import { firestoreExport, firestoreExportTool } from './tools/export.js';
 import { firestoreValidate, firestoreValidateTool } from './tools/validate.js';
 import { firestoreImport, firestoreImportTool } from './tools/import.js';
 import { firestoreUpdate, firestoreUpdateTool } from './tools/update.js';
+import { firestoreDelete, firestoreDeleteTool } from './tools/delete.js';
 import { firestoreQuerySelect, firestoreQuerySelectTool } from './tools/query-select.js';
 
 // Import context-efficient tools
@@ -42,6 +43,22 @@ import { firebaseAuthGetUser, firebaseAuthGetUserTool } from './tools/auth/get-u
 import { firebaseAuthUpdateUser, firebaseAuthUpdateUserTool } from './tools/auth/update-user.js';
 import { firebaseAuthDeleteUser, firebaseAuthDeleteUserTool } from './tools/auth/delete-user.js';
 import { firebaseAuthRevokeSessions, firebaseAuthRevokeSessionsTool } from './tools/auth/revoke-sessions.js';
+
+// Import Firebase Storage tools
+import { firebaseStorageListBuckets, firebaseStorageListBucketsTool } from './tools/storage/list-buckets.js';
+import { firebaseStorageLs, firebaseStorageLsTool } from './tools/storage/ls.js';
+import { firebaseStorageRead, firebaseStorageReadTool } from './tools/storage/read.js';
+import { firebaseStorageUpload, firebaseStorageUploadTool } from './tools/storage/upload.js';
+import { firebaseStorageRm, firebaseStorageRmTool } from './tools/storage/rm.js';
+import { firebaseStorageStat, firebaseStorageStatTool } from './tools/storage/stat.js';
+import { firebaseStorageGetUrl, firebaseStorageGetUrlTool } from './tools/storage/get-url.js';
+import { firebaseStorageCp, firebaseStorageCpTool } from './tools/storage/cp.js';
+import { firebaseStorageMv, firebaseStorageMvTool } from './tools/storage/mv.js';
+import { firebaseStorageFind, firebaseStorageFindTool } from './tools/storage/find.js';
+import { firebaseStorageSync, firebaseStorageSyncTool } from './tools/storage/sync.js';
+import { firebaseStoragePush, firebaseStoragePushTool } from './tools/storage/push.js';
+import { firebaseStorageGetAccess, firebaseStorageGetAccessTool } from './tools/storage/get-access.js';
+import { firebaseStorageSetAccess, firebaseStorageSetAccessTool } from './tools/storage/set-access.js';
 
 /**
  * Main server instance
@@ -73,6 +90,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       firestoreValidateTool,
       firestoreImportTool,
       firestoreUpdateTool,
+      firestoreDeleteTool,
       firestoreQuerySelectTool,
       firestoreQueryCollectionGroupTool,
       // Context-efficient tools
@@ -86,6 +104,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       firebaseAuthUpdateUserTool,
       firebaseAuthDeleteUserTool,
       firebaseAuthRevokeSessionsTool,
+      // Firebase Storage tools
+      firebaseStorageListBucketsTool,
+      firebaseStorageLsTool,
+      firebaseStorageReadTool,
+      firebaseStorageUploadTool,
+      firebaseStorageRmTool,
+      firebaseStorageStatTool,
+      firebaseStorageGetUrlTool,
+      firebaseStorageCpTool,
+      firebaseStorageMvTool,
+      firebaseStorageFindTool,
+      firebaseStorageSyncTool,
+      firebaseStoragePushTool,
+      firebaseStorageGetAccessTool,
+      firebaseStorageSetAccessTool,
     ],
   };
 });
@@ -274,6 +307,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
 
+      case 'firestore_delete':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firestoreDelete(args as any), null, 2),
+            },
+          ],
+        };
+
       case 'firestore_query_select':
         return {
           content: [
@@ -380,6 +423,146 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(await firebaseAuthRevokeSessions(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_list_buckets':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageListBuckets(), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_ls':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageLs(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_read':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageRead(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_upload':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageUpload(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_rm':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageRm(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_stat':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageStat(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_get_url':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageGetUrl(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_cp':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageCp(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_mv':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageMv(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_find':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageFind(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_sync':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageSync(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_push':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStoragePush(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_get_access':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageGetAccess(args as any), null, 2),
+            },
+          ],
+        };
+
+      case 'firebase_storage_set_access':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseStorageSetAccess(args as any), null, 2),
             },
           ],
         };
