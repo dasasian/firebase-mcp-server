@@ -1,6 +1,6 @@
 # Firebase MCP Server
 
-General-purpose Model Context Protocol (MCP) server for Firebase (Firestore, Storage, Auth) with schema-driven validation and context-efficient tools.
+General-purpose Model Context Protocol (MCP) server for Firebase (Firestore, Storage, Auth, Functions Logging) with schema-driven validation and context-efficient tools.
 
 ## Features
 
@@ -14,6 +14,7 @@ General-purpose Model Context Protocol (MCP) server for Firebase (Firestore, Sto
 - **Works without schemas** - Discovery mode for exploring unknown databases
 - **Context-efficient tools** - 99% token reduction for large datasets
 - **Index-aware queries** - Validates queries against `firestore.indexes.json`
+- **Functions logging** - SQL-like queries for Cloud Functions logs with aggregations and label filtering
 
 ## Quick Start
 
@@ -79,6 +80,24 @@ export FIRESTORE_DISCOVERY_CACHE_TTL=300
 - `firestore_sum` - Aggregate without fetching (99.91% savings)
 - `firestore_stats` - Collection overview (99.3% savings)
 
+### Firebase Functions Tools (1)
+- `firebase_functions_logs` - Query Cloud Functions logs with SQL-like syntax
+
+**Example queries:**
+```json
+// Discover what functions exist
+{"distinct": "functionName"}
+
+// Show recent errors
+{"where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "limit": 20}
+
+// Top error patterns with counts
+{"groupBy": ["textPayload"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "count", "direction": "desc"}], "limit": 10}
+
+// Filter by custom labels (e.g., user, environment)
+{"where": [{"field": "labels.user_id", "operator": "==", "value": "123"}]}
+```
+
 ## Schema Format
 
 Schemas follow Firebase's path-based convention:
@@ -126,6 +145,7 @@ Schemas follow Firebase's path-based convention:
 - [@ Mention Support Guide](docs/resources-guide.md) - How to use `@firebase:firestore://` references
 - [Configuration Reference](docs/configuration.md)
 - [Schema Creation Guide](docs/schema-guide.md)
+- [Functions Logging Guide](docs/logging-guide.md) - Query Cloud Functions logs with SQL-like syntax, aggregations, and custom labels
 
 ## License
 

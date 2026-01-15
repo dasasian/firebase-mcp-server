@@ -5,8 +5,11 @@
 
 import admin from 'firebase-admin';
 import { readFile } from 'fs/promises';
+import { Logging } from '@google-cloud/logging';
 
 let initialized = false;
+let cachedServiceAccountPath: string | undefined;
+let loggingClient: Logging | undefined;
 
 /**
  * Initialize Firebase Admin SDK
@@ -41,8 +44,10 @@ export async function initializeFirebase(): Promise<void> {
         projectId,
       });
 
+      cachedServiceAccountPath = serviceAccountPath;
       console.error(`[Firebase] Initialized with service account from ${serviceAccountPath}`);
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      cachedServiceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
       // Use application default credentials
       admin.initializeApp({
         projectId,
@@ -81,4 +86,28 @@ export async function getFirestore(): Promise<admin.firestore.Firestore> {
  */
 export function isInitialized(): boolean {
   return initialized;
+}
+
+/**
+ * Get the service account path used for initialization
+ */
+export function getServiceAccountPath(): string | undefined {
+  return cachedServiceAccountPath;
+}
+
+/**
+ * Get Cloud Logging instance (initializes Firebase if needed)
+ */
+export async function getLogging(): Promise<Logging> {
+  if (!initialized) {
+    await initializeFirebase();
+  }
+
+  if (!loggingClient) {
+    loggingClient = new Logging(
+      cachedServiceAccountPath ? { keyFilename: cachedServiceAccountPath } : undefined
+    );
+  }
+
+  return loggingClient;
 }

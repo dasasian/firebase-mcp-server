@@ -20,8 +20,14 @@ dist/
 !package.json
 !tsconfig.json
 !firestore.indexes.json
+!firestore-schemas.json
+!logging-schemas.json
 !examples/**/*.json
 !config/**/*.json
+
+# Firebase auto-generated cache files
+.firebase-mcp-cache.json
+.firebase-logging-schema.json
 
 # IDE
 .vscode/

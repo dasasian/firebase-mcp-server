@@ -19,6 +19,7 @@ import { initializeConfigLoader, getConfig, isInitialized } from './shared/confi
 import { initializeIndexLoader } from './shared/index-loader.js';
 import { initializeFirebase } from './shared/firebase.js';
 import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, trackDocumentAccess } from './shared/resource-discovery.js';
+import { initializeLoggingSchemaLoader } from './shared/logging-schema-loader.js';
 
 // Import core tools
 import { firestoreRead, firestoreReadTool } from './tools/read.js';
@@ -59,6 +60,9 @@ import { firebaseStorageSync, firebaseStorageSyncTool } from './tools/storage/sy
 import { firebaseStoragePush, firebaseStoragePushTool } from './tools/storage/push.js';
 import { firebaseStorageGetAccess, firebaseStorageGetAccessTool } from './tools/storage/get-access.js';
 import { firebaseStorageSetAccess, firebaseStorageSetAccessTool } from './tools/storage/set-access.js';
+
+// Import Firebase Functions Logging tools
+import { firebaseFunctionsLogs, firebaseFunctionsLogsTool } from './tools/functions/logs.js';
 
 /**
  * Main server instance
@@ -119,6 +123,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       firebaseStoragePushTool,
       firebaseStorageGetAccessTool,
       firebaseStorageSetAccessTool,
+      // Firebase Functions Logging tools
+      firebaseFunctionsLogsTool,
     ],
   };
 });
@@ -567,6 +573,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
 
+      case 'firebase_functions_logs':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await firebaseFunctionsLogs(args as any), null, 2),
+            },
+          ],
+        };
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -618,6 +634,14 @@ async function main() {
     // Initialize Firebase
     await initializeFirebase();
     console.error('[MCP] Firebase initialized');
+
+    // Initialize logging schema (optional)
+    try {
+      await initializeLoggingSchemaLoader();
+      console.error('[MCP] Logging schema loaded');
+    } catch (error) {
+      console.error('[MCP] Warning: Logging schema not loaded (will create on first query)');
+    }
 
     // Start stdio transport
     const transport = new StdioServerTransport();
