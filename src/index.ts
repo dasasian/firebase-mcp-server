@@ -643,6 +643,11 @@ async function main() {
       console.error('[MCP] Warning: Logging schema not loaded (will create on first query)');
     }
 
+    // Log dev log file config if set
+    if (process.env.DEV_LOG_FILE) {
+      console.error('[MCP] Local log file configured:', process.env.DEV_LOG_FILE);
+    }
+
     // Start stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
