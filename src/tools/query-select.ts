@@ -235,7 +235,12 @@ async function processDocuments(
     if (fields && fields.length > 0) {
       const projected: Record<string, unknown> = {};
       for (const field of fields) {
-        if (field in data) {
+        if (field.includes('.')) {
+          const value = getNestedValue(data, field);
+          if (value !== undefined) {
+            projected[field] = value;
+          }
+        } else if (field in data) {
           projected[field] = data[field];
         }
       }
