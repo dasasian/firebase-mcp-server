@@ -3,9 +3,10 @@
  * Reads and parses JSONL files line-by-line with error handling
  */
 
-import { createReadStream } from 'fs';
+import { createReadStream, readdirSync, existsSync } from 'fs';
 import { createInterface } from 'readline';
 import { access, constants } from 'fs/promises';
+import { join } from 'path';
 
 export interface LogEntry {
   timestamp: string;
@@ -18,6 +19,23 @@ export interface LogEntry {
   labels?: Record<string, string>;
   resource: Record<string, unknown>;
   insertId: string;
+}
+
+/**
+ * Resolve log files from a directory — current file first, then rotated files newest-to-oldest.
+ */
+export function resolveLogFiles(logDir: string): string[] {
+  const current = join(logDir, 'dev.jsonl');
+  const rotated = readdirSync(logDir)
+    .filter(f => f.startsWith('dev-') && f.endsWith('.jsonl'))
+    .sort()
+    .reverse()
+    .map(f => join(logDir, f));
+  const files: string[] = [];
+  try { readdirSync(logDir); } catch { return files; }
+  if (existsSync(current)) files.push(current);
+  files.push(...rotated);
+  return files;
 }
 
 /**

@@ -274,18 +274,12 @@ export function projectFields(entry: any, fields: string[]): any {
   const projected: Record<string, unknown> = {};
 
   for (const field of fields) {
-    if (field.startsWith('labels.')) {
-      // Handle nested label access
-      const labelKey = field.substring(7);
-      if (entry.labels && labelKey in entry.labels) {
-        if (!projected.labels) {
-          projected.labels = {};
-        }
-        (projected.labels as Record<string, unknown>)[labelKey] = entry.labels[labelKey];
+    if (field.includes('.')) {
+      // Dot-notation path: use flat key in output
+      const value = getNestedValue(entry, field);
+      if (value !== undefined) {
+        projected[field] = value;
       }
-    } else if (field === 'labels') {
-      // Include all labels
-      projected.labels = entry.labels;
     } else if (field in entry) {
       projected[field] = entry[field];
     }

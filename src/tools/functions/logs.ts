@@ -5,7 +5,7 @@
 
 import { updateAutoDiscoveredSchema } from '../../shared/logging-schema-loader.js';
 import { getLogging } from '../../shared/firebase.js';
-import { readJsonlFile } from '../../shared/jsonl-reader.js';
+import { readJsonlFile, resolveLogFiles } from '../../shared/jsonl-reader.js';
 import {
   applyClientSideFiltering,
   processDistinct,
@@ -15,7 +15,7 @@ import {
 } from '../../shared/logging-query-processor.js';
 
 export interface FirebaseFunctionsLogsInput {
-  source?: 'local' | 'cloud';  // Log source: "local" reads DEV_LOG_FILE, "cloud" queries Cloud Logging. Default: "cloud"
+  source?: 'local' | 'cloud';  // Log source: "local" reads DEV_LOG_DIR directory, "cloud" queries Cloud Logging. Default: "cloud"
   resourceTypes?: string[];  // Resource types to query (default: ["cloud_function", "cloud_run_revision"])
   fields?: string[];  // SELECT specific fields
   distinct?: string;  // SELECT DISTINCT field
@@ -87,26 +87,38 @@ export async function firebaseFunctionsLogs(
 
     // Route based on source parameter
     if (source === 'local') {
-      const devLogFile = process.env.DEV_LOG_FILE;
+      const devLogDir = process.env.DEV_LOG_DIR;
 
-      if (!devLogFile) {
+      if (!devLogDir) {
         return {
           totalEntries: 0,
           cloudLoggingFilter: '',
           isAggregated: false,
-          error: 'DEV_LOG_FILE environment variable not set',
+          error: 'DEV_LOG_DIR environment variable not set',
         };
       }
 
       try {
-        // Read local JSONL file
-        entries = await readJsonlFile(devLogFile);
+        const logFiles = resolveLogFiles(devLogDir);
+        if (logFiles.length === 0) {
+          return {
+            totalEntries: 0,
+            cloudLoggingFilter: '',
+            isAggregated: false,
+            error: `No log files found in ${devLogDir}`,
+          };
+        }
+        // Read all files newest-first and merge
+        const allEntries = await Promise.all(logFiles.map(f => readJsonlFile(f)));
+        entries = allEntries.flat().sort((a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
       } catch (err) {
         return {
           totalEntries: 0,
           cloudLoggingFilter: '',
           isAggregated: false,
-          error: `Failed to read local log file: ${err}`,
+          error: `Failed to read local logs: ${err}`,
         };
       }
     } else {
@@ -369,7 +381,10 @@ export const firebaseFunctionsLogsTool = {
     '\n- User logs: {"where": [{"field": "labels.user_id", "operator": "==", "value": "123"}]} ' +
     '\n- Production errors: {"where": [{"field": "labels.environment", "operator": "==", "value": "production"}, {"field": "severity", "operator": "==", "value": "ERROR"}]} ' +
     '\n- Premium orders: {"where": [{"field": "labels.order_type", "operator": "==", "value": "premium"}]} ' +
-    '\n\nQueryable fields: functionName, severity, timestamp, executionId, region, textPayload, jsonPayload, labels.* ' +
+    '\n\nERROR SUMMARY EXAMPLE (group by error type): ' +
+    '\n- {"groupBy": ["jsonPayload.error.name"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}, {"field": "timestamp", "operation": "max", "alias": "last_seen"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "count", "direction": "desc"}]} ' +
+    '\n- Project nested fields: {"fields": ["timestamp", "jsonPayload.error.name", "jsonPayload.error.message", "jsonPayload.context.screen"]} ' +
+    '\n\nQueryable fields: functionName, severity, timestamp, executionId, region, textPayload, jsonPayload, jsonPayload.* (dot-notation for any nested path), labels.* ' +
     '\nField projection reduces token usage. LIKE patterns for text search. GROUP BY works with labels. ' +
     '\nRequires IAM role: roles/logging.viewer (minimum).',
   inputSchema: {
