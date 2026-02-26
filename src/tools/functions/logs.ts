@@ -299,15 +299,26 @@ function parseTimeValue(value: string): string {
  */
 function processLogEntry(entry: any): any {
   const metadata = entry.metadata || {};
-  const data = entry.data || {};
+  const data = entry.data;
+
+  // metadata.timestamp is a Date object from the SDK — convert to ISO string
+  const ts = metadata.timestamp;
+  const timestamp = ts instanceof Date
+    ? ts.toISOString()
+    : (typeof ts === 'string' ? ts : new Date().toISOString());
+
+  // entry.data is the payload: string = textPayload, object = jsonPayload
+  const isJsonPayload = data !== null && data !== undefined && typeof data === 'object';
+  const textPayload = isJsonPayload ? undefined : (data ? String(data) : undefined);
+  const jsonPayload = isJsonPayload ? data : undefined;
 
   return {
-    timestamp: metadata.timestamp || new Date().toISOString(),
+    timestamp,
     severity: metadata.severity || 'DEFAULT',
     functionName: metadata.resource?.labels?.function_name || metadata.resource?.labels?.service_name || 'unknown',
     executionId: metadata.labels?.execution_id,
-    textPayload: data.textPayload || data.message,
-    jsonPayload: data.jsonPayload,
+    textPayload,
+    jsonPayload,
     region: metadata.resource?.labels?.region || metadata.resource?.labels?.location,
     labels: metadata.labels || {},
     resource: metadata.resource || {},

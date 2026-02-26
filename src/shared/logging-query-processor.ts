@@ -53,7 +53,11 @@ export function applyClientSideFiltering(
           return false;
         }
       } else if (clause.operator === '==') {
-        const fieldValue = getNestedValue(entry, clause.field);
+        let fieldValue = getNestedValue(entry, clause.field);
+        // For labels.* fields, also check jsonPayload.labels.* (Cloud Run v2 logs)
+        if (fieldValue === undefined && clause.field.startsWith('labels.')) {
+          fieldValue = getNestedValue(entry, `jsonPayload.${clause.field}`);
+        }
         if (fieldValue !== clause.value) {
           return false;
         }
