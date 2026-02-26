@@ -194,6 +194,10 @@ export async function firebaseFunctionsLogs(
   }
 }
 
+function toKebabCase(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+}
+
 /**
  * Build Cloud Logging filter from WHERE clauses
  */
@@ -219,15 +223,18 @@ function buildCloudLoggingFilter(
     // Map field names to Cloud Logging structure
     if (field === 'functionName') {
       if (operator === 'in' && Array.isArray(value)) {
-        const conditions = value.map(v => `resource.labels.function_name="${v}"`).join(' OR ');
+        const conditions = value.flatMap(v => [
+          `resource.labels.function_name="${v}"`,
+          `resource.labels.service_name="${toKebabCase(String(v))}"`,
+        ]).join(' OR ');
         filters.push(`(${conditions})`);
       } else if (operator === '==') {
-        filters.push(`resource.labels.function_name="${value}"`);
+        filters.push(`(resource.labels.function_name="${value}" OR resource.labels.service_name="${toKebabCase(String(value))}")`);
       }
     } else if (field === 'executionId') {
       filters.push(`labels.execution_id="${value}"`);
     } else if (field === 'region') {
-      filters.push(`resource.labels.region="${value}"`);
+      filters.push(`(resource.labels.region="${value}" OR resource.labels.location="${value}")`);
     } else if (field === 'severity') {
       if (operator === 'in' && Array.isArray(value)) {
         const conditions = value.map(v => `severity="${v}"`).join(' OR ');
@@ -294,11 +301,11 @@ function processLogEntry(entry: any): any {
   return {
     timestamp: metadata.timestamp || new Date().toISOString(),
     severity: metadata.severity || 'DEFAULT',
-    functionName: metadata.resource?.labels?.function_name || 'unknown',
+    functionName: metadata.resource?.labels?.function_name || metadata.resource?.labels?.service_name || 'unknown',
     executionId: metadata.labels?.execution_id,
     textPayload: data.textPayload || data.message,
     jsonPayload: data.jsonPayload,
-    region: metadata.resource?.labels?.region,
+    region: metadata.resource?.labels?.region || metadata.resource?.labels?.location,
     labels: metadata.labels || {},
     resource: metadata.resource || {},
     insertId: metadata.insertId || '',
