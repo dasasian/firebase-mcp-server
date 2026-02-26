@@ -255,13 +255,16 @@ function buildCloudLoggingFilter(
         filters.push(`timestamp<="${isoValue}"`);
       }
     } else if (field.startsWith('labels.')) {
-      // Custom labels
+      // Check both root labels (v1 functions) and jsonPayload.labels (v2/Cloud Run)
       const labelKey = field.substring(7);
       if (operator === 'in' && Array.isArray(value)) {
-        const conditions = value.map(v => `labels.${labelKey}="${v}"`).join(' OR ');
+        const conditions = value.flatMap(v => [
+          `labels.${labelKey}="${v}"`,
+          `jsonPayload.labels.${labelKey}="${v}"`,
+        ]).join(' OR ');
         filters.push(`(${conditions})`);
       } else if (operator === '==') {
-        filters.push(`labels.${labelKey}="${value}"`);
+        filters.push(`(labels.${labelKey}="${value}" OR jsonPayload.labels.${labelKey}="${value}")`);
       }
     } else if (field === 'textPayload') {
       // Only handle simple equality for textPayload in Cloud Logging filter
