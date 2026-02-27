@@ -33,34 +33,29 @@ export async function initializeFirebase(): Promise<void> {
   try {
     // Check if service account path is provided
     const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`;
 
     if (serviceAccountPath) {
-      // Load service account from file
       const serviceAccountContent = await readFile(serviceAccountPath, 'utf-8');
       const serviceAccount = JSON.parse(serviceAccountContent);
 
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId,
+        storageBucket,
       });
 
       cachedServiceAccountPath = serviceAccountPath;
       console.error(`[Firebase] Initialized with service account from ${serviceAccountPath}`);
-    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    } else {
       cachedServiceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-      // Use application default credentials
+
       admin.initializeApp({
         projectId,
+        storageBucket,
       });
 
       console.error('[Firebase] Initialized with application default credentials');
-    } else {
-      // Try to use application default credentials without explicit path
-      admin.initializeApp({
-        projectId,
-      });
-
-      console.error('[Firebase] Initialized with default credentials');
     }
 
     initialized = true;
