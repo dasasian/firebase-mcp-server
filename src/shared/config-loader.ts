@@ -35,8 +35,16 @@ export async function initializeConfigLoader(path: string): Promise<void> {
         if (event.eventType === 'change') {
           // Debounce: wait 100ms before reloading
           await new Promise(resolve => setTimeout(resolve, 100));
-          await reloadConfig();
-          console.error('[Config] Schema file changed, reloaded');
+          try {
+            await reloadConfig();
+            console.error('[Config] Schema file changed, reloaded');
+          } catch {
+            // Keep the last good config and keep watching. A file caught
+            // mid-save is invalid for a moment; giving up here would leave
+            // hot reload dead until the server restarts. reloadConfig()
+            // has already logged the underlying error.
+            console.error('[Config] Reload failed, keeping the previous config');
+          }
         }
       }
     } catch (err: unknown) {

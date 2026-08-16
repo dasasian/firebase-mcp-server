@@ -213,8 +213,10 @@ export async function updateAutoDiscoveredSchema(discoveries: {
     const valueArray = Array.from(values);
 
     if (existing) {
-      // Merge sample values (keep unique, max 10)
+      // Merge previously seen values (enums store `values`, everything else
+      // stores `sampleValues`) with the new ones, keeping them unique.
       const allValues = new Set([
+        ...(existing.values || []),
         ...(existing.sampleValues || []),
         ...valueArray,
       ]);

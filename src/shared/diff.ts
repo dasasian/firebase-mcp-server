@@ -75,6 +75,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
   // Different types
   if (typeof a !== typeof b) return false;
 
+  // An array is never equal to a plain object (both are typeof 'object')
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+
   // Arrays
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
