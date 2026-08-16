@@ -92,22 +92,89 @@ export FIRESTORE_DISCOVERY_CACHE_TTL=300
 
 ## Tools
 
-### Core Tools (6)
-- `firestore_read` - Read single document
-- `firestore_export` - Batch export collections
-- `firestore_validate` - Schema validation
-- `firestore_import` - Import with dry-run
-- `firestore_update` - Safe field updates
-- `firestore_query` - Index-aware queries
+The server ships 33 tools in four groups. Every tool declares MCP annotations
+(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so a client
+can auto-approve reads and ask before writes.
 
-### Context-Efficient Tools (4)
-- `firestore_count` - Count without fetching documents (99.96% savings)
-- `firestore_select` - Field projection (90% savings)
-- `firestore_sum` - Aggregate without fetching (99.91% savings)
-- `firestore_stats` - Collection overview (99.3% savings)
+### Choosing which tools to load
 
-### Firebase Functions Tools (1)
-- `firebase_functions_logs` - Query Cloud Functions logs with SQL-like syntax
+All 33 tool definitions cost roughly 12k tokens of context on every session. If
+you only need part of the surface, narrow it:
+
+```bash
+# Only Firestore (12 tools, ~4.3k tokens)
+firebase-mcp start --tools firestore
+
+# Firestore plus Auth
+firebase-mcp start --tools firestore,auth
+```
+
+Or set it in your MCP client config:
+
+```bash
+export FIREBASE_MCP_TOOLS=firestore,storage
+```
+
+The `--tools` flag wins over the environment variable. Leaving both unset loads
+everything, so upgrading never hides a tool you were already using. Calling a
+tool from a group you switched off returns an error naming the group to add.
+
+| Group | Tools | ~Tokens |
+|---|---:|---:|
+| `firestore` | 12 | 4,341 |
+| `storage` | 14 | 4,152 |
+| `auth` | 6 | 2,075 |
+| `logs` | 1 | 1,817 |
+| *all (default)* | *33* | *12,387* |
+
+### Firestore (12) — `--tools firestore`
+
+- `firestore_show_collections` — Show collections *(read)*
+- `firestore_read` — Read document *(read)*
+- `firestore_export` — Export collection *(read)*
+- `firestore_validate` — Validate against schema *(read)*
+- `firestore_query_select` — Query documents *(read)*
+- `firestore_query_collection_group` — Query collection group *(read)*
+- `firestore_count` — Count documents *(read)*
+- `firestore_sum` — Sum a field *(read)*
+- `firestore_stats` — Collection statistics *(read)*
+- `firestore_import` — Import document *(write, destructive)*
+- `firestore_update` — Update documents *(write, destructive)*
+- `firestore_delete` — Delete documents *(write, destructive)*
+
+### Firebase Auth (6) — `--tools auth`
+
+- `firebase_auth_list_users` — List users *(read)*
+- `firebase_auth_get_user` — Get user *(read)*
+- `firebase_auth_create_user` — Create user *(write)*
+- `firebase_auth_update_user` — Update user *(write, destructive)*
+- `firebase_auth_delete_user` — Delete user *(write, destructive)*
+- `firebase_auth_revoke_sessions` — Revoke sessions *(write, destructive)*
+
+### Firebase Storage (14) — `--tools storage`
+
+- `firebase_storage_list_buckets` — List buckets *(read)*
+- `firebase_storage_ls` — List files *(read)*
+- `firebase_storage_stat` — File metadata *(read)*
+- `firebase_storage_find` — Find files *(read)*
+- `firebase_storage_get_url` — Get file URL *(read)*
+- `firebase_storage_get_access` — Get file access *(read)*
+- `firebase_storage_read` — Download file to a local temp path *(write)*
+- `firebase_storage_upload` — Upload file *(write, destructive)*
+- `firebase_storage_rm` — Delete file *(write, destructive)*
+- `firebase_storage_cp` — Copy file *(write, destructive)*
+- `firebase_storage_mv` — Move file *(write, destructive)*
+- `firebase_storage_sync` — Sync bucket to local *(write, destructive)*
+- `firebase_storage_push` — Push local to bucket *(write, destructive)*
+- `firebase_storage_set_access` — Set file access *(write, destructive)*
+
+### Cloud Logging (1) — `--tools logs`
+
+- `firebase_functions_logs` — Query Cloud Functions logs with SQL-like syntax *(write)*
+
+`firebase_storage_read` and `firebase_functions_logs` are not marked read-only
+because they write: the first downloads to a local temp file, the second updates
+its auto-discovered logging schema on disk.
 
 **Example queries:**
 ```json

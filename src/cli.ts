@@ -18,9 +18,18 @@ program
   .description('Start the MCP server')
   .argument('[config]', 'Path to schema configuration file', './firestore-schemas.json')
   .argument('[indexes]', 'Path to Firestore indexes file', './firestore.indexes.json')
-  .action(async (config, indexes) => {
+  .option(
+    '--tools <groups>',
+    'Comma-separated tool groups to expose: firestore, auth, storage, logs (default: all)'
+  )
+  .action(async (config, indexes, options) => {
     // Forward to main server
     process.argv = ['node', 'index.js', config, indexes];
+
+    if (options.tools) {
+      process.argv.push(`--tools=${options.tools}`);
+    }
+
     await import('./index.js');
   });
 

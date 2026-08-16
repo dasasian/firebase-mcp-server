@@ -95,6 +95,33 @@ export interface ToolEntry {
 }
 
 /**
+ * Tool families a user can switch on or off.
+ *
+ * The full set of 33 tools costs roughly 12k tokens of context on every
+ * session before any work happens. Most projects only need one or two
+ * families, so the server lets callers narrow the surface.
+ */
+export const TOOL_GROUPS = ['firestore', 'auth', 'storage', 'logs'] as const;
+
+export type ToolGroup = (typeof TOOL_GROUPS)[number];
+
+/**
+ * Work out which family a tool belongs to from its name.
+ *
+ * Throws for an unrecognised prefix rather than guessing, so a new tool that
+ * does not follow the naming convention fails loudly in the test suite instead
+ * of silently becoming unreachable.
+ */
+export function groupOf(name: string): ToolGroup {
+  if (name.startsWith('firestore_')) return 'firestore';
+  if (name.startsWith('firebase_auth_')) return 'auth';
+  if (name.startsWith('firebase_storage_')) return 'storage';
+  if (name.startsWith('firebase_functions_')) return 'logs';
+
+  throw new Error(`Tool "${name}" does not match any known tool group prefix`);
+}
+
+/**
  * A read-only tool. `destructiveHint` and `idempotentHint` are only meaningful
  * when a tool writes, so they are left off deliberately.
  *
@@ -757,14 +784,77 @@ export const TOOL_ENTRIES: ToolEntry[] = [
   },
 ];
 
-/** Tool descriptors in advertised order, for `tools/list`. */
+/** Every tool descriptor in advertised order, regardless of group. */
 export const TOOL_DEFINITIONS: ToolDescriptor[] = TOOL_ENTRIES.map(entry => entry.tool);
 
-const entriesByName = new Map(TOOL_ENTRIES.map(entry => [entry.tool.name, entry]));
+/** The subset of tools a running server exposes. */
+export interface ToolSelection {
+  /** The groups that are switched on. */
+  groups: ToolGroup[];
+  /** Descriptors to advertise from `tools/list`, in catalogue order. */
+  definitions: ToolDescriptor[];
+  /** Look up an enabled tool by the name a client called. */
+  get(name: string): ToolEntry | undefined;
+  /**
+   * For a name that exists in the catalogue but is switched off, the group it
+   * would need. Returns null for a name that is not a tool at all, so the two
+   * cases can be reported differently.
+   */
+  disabledGroup(name: string): ToolGroup | null;
+}
 
-/** Look up a tool by the name a client called. */
-export function getToolEntry(name: string): ToolEntry | undefined {
-  return entriesByName.get(name);
+/** Build the tool surface for a given set of groups. */
+export function selectTools(groups: readonly ToolGroup[]): ToolSelection {
+  const enabled = new Set(groups);
+  const entries = TOOL_ENTRIES.filter(entry => enabled.has(groupOf(entry.tool.name)));
+  const byName = new Map(entries.map(entry => [entry.tool.name, entry]));
+
+  return {
+    groups: TOOL_GROUPS.filter(group => enabled.has(group)),
+    definitions: entries.map(entry => entry.tool),
+    get: name => byName.get(name),
+    disabledGroup: name => {
+      if (byName.has(name)) return null;
+      const known = TOOL_ENTRIES.find(entry => entry.tool.name === name);
+      return known ? groupOf(known.tool.name) : null;
+    },
+  };
+}
+
+/**
+ * Read a group selection written as a comma-separated list, from either the
+ * `--tools` flag or `FIREBASE_MCP_TOOLS`.
+ *
+ * An empty or absent spec means every group — narrowing the surface has to be
+ * something you opt into, so upgrading never silently hides a tool. A spec
+ * naming only unrecognised groups also falls back to everything rather than
+ * leaving the server with nothing to offer.
+ */
+export function parseToolGroups(spec: string | undefined): {
+  groups: ToolGroup[];
+  unknown: string[];
+  usedDefault: boolean;
+} {
+  const requested = (spec ?? '')
+    .split(',')
+    .map(part => part.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (requested.length === 0) {
+    return { groups: [...TOOL_GROUPS], unknown: [], usedDefault: true };
+  }
+
+  const isGroup = (value: string): value is ToolGroup =>
+    (TOOL_GROUPS as readonly string[]).includes(value);
+
+  const groups = TOOL_GROUPS.filter(group => requested.includes(group));
+  const unknown = requested.filter(value => !isGroup(value));
+
+  if (groups.length === 0) {
+    return { groups: [...TOOL_GROUPS], unknown, usedDefault: true };
+  }
+
+  return { groups, unknown, usedDefault: false };
 }
 
 // Ajv is lenient about unknown keywords so an imperfect hand-written schema

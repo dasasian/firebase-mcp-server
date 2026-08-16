@@ -22,7 +22,12 @@ import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, tr
 import { initializeLoggingSchemaLoader } from './shared/logging-schema-loader.js';
 
 // The tool table: handlers, safety annotations, and output shapes
-import { TOOL_DEFINITIONS, getToolEntry, validateToolArgs } from './tools/registry.js';
+import {
+  parseToolGroups,
+  selectTools,
+  validateToolArgs,
+  type ToolSelection,
+} from './tools/registry.js';
 
 // Tools used directly to serve resources
 import { firestoreRead } from './tools/read.js';
@@ -45,10 +50,16 @@ const server = new Server(
 );
 
 /**
+ * Which tool groups this process exposes. Set during startup, before the
+ * transport is connected, so no request can observe the default.
+ */
+let tools: ToolSelection = selectTools(parseToolGroups(undefined).groups);
+
+/**
  * List available tools
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: TOOL_DEFINITIONS };
+  return { tools: tools.definitions };
 });
 
 /**
@@ -173,10 +184,20 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
-  const entry = getToolEntry(name);
+  const entry = tools.get(name);
 
   if (!entry) {
-    return errorResult(`Unknown tool: ${name}`);
+    const group = tools.disabledGroup(name);
+
+    // Distinguish "this tool does not exist" from "you switched its group
+    // off", so a narrowed surface is a clear message rather than a mystery.
+    return errorResult(
+      group
+        ? `Tool ${name} is in the "${group}" group, which is not enabled. ` +
+            `Enabled groups: ${tools.groups.join(', ')}. ` +
+            `Add "${group}" to --tools or FIREBASE_MCP_TOOLS to use it.`
+        : `Unknown tool: ${name}`
+    );
   }
 
   const invalid = validateToolArgs(entry, args ?? {});
@@ -215,16 +236,40 @@ function errorResult(message: string) {
  * Start the server
  */
 async function main() {
+  // Split flags from the positional [config] [indexes] arguments, so passing
+  // --tools does not get mistaken for a schema path.
+  const argv = process.argv.slice(2);
+  const flags = argv.filter(arg => arg.startsWith('--'));
+  const positional = argv.filter(arg => !arg.startsWith('--'));
+
   // Get config path from command line args or environment
   const configPath =
-    process.argv[2] || process.env.FIRESTORE_SCHEMA_PATH || './firestore-schemas.json';
+    positional[0] || process.env.FIRESTORE_SCHEMA_PATH || './firestore-schemas.json';
 
   const indexPath =
-    process.argv[3] || process.env.FIRESTORE_INDEX_PATH || './firestore.indexes.json';
+    positional[1] || process.env.FIRESTORE_INDEX_PATH || './firestore.indexes.json';
+
+  // Narrow the tool surface. The flag wins over the environment variable.
+  const toolsFlag = flags
+    .find(arg => arg === '--tools' || arg.startsWith('--tools='))
+    ?.split('=')[1];
+
+  const selection = parseToolGroups(toolsFlag ?? process.env.FIREBASE_MCP_TOOLS);
+  tools = selectTools(selection.groups);
 
   console.error('[MCP] Firestore MCP Server starting...');
   console.error(`[MCP] Schema config: ${configPath}`);
   console.error(`[MCP] Index config: ${indexPath}`);
+
+  if (selection.unknown.length > 0) {
+    console.error(`[MCP] Warning: unknown tool groups ignored: ${selection.unknown.join(', ')}`);
+  }
+
+  console.error(
+    selection.usedDefault
+      ? `[MCP] Tools: all ${tools.definitions.length} (set --tools or FIREBASE_MCP_TOOLS to narrow)`
+      : `[MCP] Tools: ${tools.definitions.length} from groups ${tools.groups.join(', ')}`
+  );
 
   try {
     // Initialize configuration (optional - discovery mode if not found)

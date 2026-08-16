@@ -3,9 +3,16 @@ import Ajv from 'ajv';
 import {
   TOOL_ENTRIES,
   TOOL_DEFINITIONS,
-  getToolEntry,
+  TOOL_GROUPS,
+  groupOf,
+  parseToolGroups,
+  selectTools,
   validateToolArgs,
 } from '../src/tools/registry.js';
+
+/** The full surface, as the server exposes it by default. */
+const all = selectTools(TOOL_GROUPS);
+const getToolEntry = (name: string) => all.get(name);
 
 const ajv = new Ajv({ strict: false, allErrors: true });
 
@@ -83,6 +90,119 @@ describe('getToolEntry', () => {
 
   it('returns undefined for an unknown name', () => {
     expect(getToolEntry('firestore_nope')).toBeUndefined();
+  });
+});
+
+describe('groupOf', () => {
+  it('maps every tool in the catalogue to a known group', () => {
+    for (const name of names) {
+      expect(TOOL_GROUPS, name).toContain(groupOf(name));
+    }
+  });
+
+  it('sorts each family correctly', () => {
+    expect(groupOf('firestore_read')).toBe('firestore');
+    expect(groupOf('firebase_auth_get_user')).toBe('auth');
+    expect(groupOf('firebase_storage_ls')).toBe('storage');
+    expect(groupOf('firebase_functions_logs')).toBe('logs');
+  });
+
+  it('throws for a name that follows no convention', () => {
+    expect(() => groupOf('something_else')).toThrow(/tool group prefix/);
+  });
+});
+
+describe('parseToolGroups', () => {
+  it('defaults to every group when nothing is set', () => {
+    const parsed = parseToolGroups(undefined);
+    expect(parsed.groups).toEqual([...TOOL_GROUPS]);
+    expect(parsed.usedDefault).toBe(true);
+  });
+
+  it('defaults to every group for an empty string', () => {
+    expect(parseToolGroups('').usedDefault).toBe(true);
+    expect(parseToolGroups('  ,  ').usedDefault).toBe(true);
+  });
+
+  it('reads a comma-separated list', () => {
+    expect(parseToolGroups('firestore,storage').groups).toEqual(['firestore', 'storage']);
+  });
+
+  it('ignores spacing and case', () => {
+    expect(parseToolGroups(' Firestore , AUTH ').groups).toEqual(['firestore', 'auth']);
+  });
+
+  it('always returns groups in catalogue order, not the order given', () => {
+    expect(parseToolGroups('logs,firestore').groups).toEqual(['firestore', 'logs']);
+  });
+
+  it('deduplicates a repeated group', () => {
+    expect(parseToolGroups('auth,auth').groups).toEqual(['auth']);
+  });
+
+  it('reports unknown groups but keeps the valid ones', () => {
+    const parsed = parseToolGroups('firestore,bogus');
+    expect(parsed.groups).toEqual(['firestore']);
+    expect(parsed.unknown).toEqual(['bogus']);
+    expect(parsed.usedDefault).toBe(false);
+  });
+
+  it('falls back to everything rather than leaving no tools at all', () => {
+    const parsed = parseToolGroups('bogus,alsobogus');
+    expect(parsed.groups).toEqual([...TOOL_GROUPS]);
+    expect(parsed.unknown).toEqual(['bogus', 'alsobogus']);
+    expect(parsed.usedDefault).toBe(true);
+  });
+});
+
+describe('selectTools', () => {
+  it('exposes the whole catalogue for every group', () => {
+    expect(all.definitions).toHaveLength(33);
+  });
+
+  it('narrows to one group', () => {
+    const only = selectTools(['firestore']);
+    expect(only.definitions).toHaveLength(12);
+    expect(only.definitions.every(t => t.name.startsWith('firestore_'))).toBe(true);
+  });
+
+  it('splits the catalogue across the four groups with nothing left over', () => {
+    const counts = TOOL_GROUPS.map(g => selectTools([g]).definitions.length);
+    expect(counts).toEqual([12, 6, 14, 1]);
+    expect(counts.reduce((a, b) => a + b)).toBe(33);
+  });
+
+  it('combines groups', () => {
+    expect(selectTools(['auth', 'logs']).definitions).toHaveLength(7);
+  });
+
+  it('exposes nothing for an empty group list', () => {
+    const none = selectTools([]);
+    expect(none.definitions).toEqual([]);
+    expect(none.get('firestore_read')).toBeUndefined();
+  });
+
+  it('keeps catalogue order within a narrowed surface', () => {
+    const picked = selectTools(['firestore']).definitions.map(t => t.name);
+    expect(picked).toEqual(names.filter(n => n.startsWith('firestore_')));
+  });
+
+  it('finds only the tools in the enabled groups', () => {
+    const only = selectTools(['firestore']);
+    expect(only.get('firestore_read')?.tool.name).toBe('firestore_read');
+    expect(only.get('firebase_storage_ls')).toBeUndefined();
+  });
+
+  it('reports the group a switched-off tool needs', () => {
+    expect(selectTools(['firestore']).disabledGroup('firebase_storage_ls')).toBe('storage');
+  });
+
+  it('reports null for a name that is not a tool at all', () => {
+    expect(selectTools(['firestore']).disabledGroup('not_a_tool')).toBeNull();
+  });
+
+  it('reports null for a tool that is enabled', () => {
+    expect(all.disabledGroup('firebase_storage_ls')).toBeNull();
   });
 });
 

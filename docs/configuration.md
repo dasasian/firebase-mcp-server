@@ -361,6 +361,45 @@ The server automatically watches the schema file and reloads when it changes:
 # No restart needed!
 ```
 
+If a save leaves the file invalid, the server keeps the last good config, logs
+the parse error, and carries on watching. Fix the file and the next save loads
+normally.
+
+## Tool Groups
+
+The server exposes 33 tools, which cost roughly 12k tokens of context on every
+session. Narrow that to the families you actually use.
+
+| Group | Tools | ~Tokens |
+|---|---:|---:|
+| `firestore` | 12 | 4,341 |
+| `storage` | 14 | 4,152 |
+| `auth` | 6 | 2,075 |
+| `logs` | 1 | 1,817 |
+| *all (default)* | *33* | *12,387* |
+
+Set it with the flag:
+
+```bash
+firebase-mcp start --tools firestore,auth
+```
+
+…or the environment variable, which is easier to put in an MCP client config:
+
+```bash
+export FIREBASE_MCP_TOOLS=firestore,auth
+```
+
+Rules:
+
+- The `--tools` flag wins over `FIREBASE_MCP_TOOLS`.
+- Unset or empty means every group. Narrowing is always opt-in, so an upgrade
+  never silently hides a tool you were using.
+- Unrecognised group names are logged as a warning and ignored. If none of the
+  names are valid the server loads everything rather than nothing.
+- Calling a tool whose group is switched off returns an error naming the group
+  you need to add — not a bare "unknown tool".
+
 ## Next Steps
 
 - [Schema Creation Guide](./schema-guide.md) - Write your first schema
