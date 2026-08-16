@@ -122,13 +122,13 @@ export function trackDocumentAccess(path: string): void {
     });
   }
 
-  // A brand new document adds a URI; an eviction below removes one. Either
-  // way the client's copy of the list is now wrong.
-  let changed = !existing;
+  // Only a brand new document changes the set of URIs. Re-reading a known one
+  // just bumps its count. The eviction below can only be triggered by that same
+  // new document, since the map is always trimmed back to the limit.
+  const changed = !existing;
 
   // Enforce max limit by evicting least used
   if (mruDocuments.size > MAX_MRU_DOCUMENTS) {
-    changed = true;
     const sorted = Array.from(mruDocuments.values()).sort((a, b) => {
       // Sort by access count desc, then by last accessed desc
       if (a.accessCount !== b.accessCount) {

@@ -105,6 +105,20 @@ export function isPathParameter(segment: string): boolean {
 }
 
 /**
+ * Check whether any segment of a path is a parameter.
+ *
+ * A path with a parameter in it is a template, not something that can be read
+ * — "users/{userId}" describes a shape, while "users/user-123" is a document.
+ *
+ * @example
+ * hasPathParameter('posts/{postId}/comments') // true
+ * hasPathParameter('posts/post-1/comments')   // false
+ */
+export function hasPathParameter(path: string): boolean {
+  return normalizePath(path).split('/').some(isPathParameter);
+}
+
+/**
  * Normalize a Firestore path (remove leading/trailing slashes)
  */
 export function normalizePath(path: string): string {

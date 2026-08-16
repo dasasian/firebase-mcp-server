@@ -69,7 +69,9 @@ describe('the table itself', () => {
   });
 
   it('keeps a stable order across reads, so clients can cache tools/list', () => {
-    expect(TOOL_DEFINITIONS.map(t => t.name)).toEqual(names);
+    const first = selectTools(TOOL_GROUPS).definitions.map(t => t.name);
+    const second = selectTools(TOOL_GROUPS).definitions.map(t => t.name);
+    expect(second).toEqual(first);
   });
 
   it('gives every tool a name, a description, and a handler', () => {

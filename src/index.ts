@@ -20,7 +20,8 @@ import { initializeConfigLoader, getConfig, isInitialized } from './shared/confi
 import { initializeIndexLoader } from './shared/index-loader.js';
 import { initializeFirebase } from './shared/firebase.js';
 import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, trackDocumentAccess, onResourceListChanged } from './shared/resource-discovery.js';
-import { getCollectionPath } from './shared/path-matcher.js';
+import { getCollectionPath, hasPathParameter, normalizePath } from './shared/path-matcher.js';
+import { parseServerArgs } from './shared/cli-args.js';
 import { initializeLoggingSchemaLoader } from './shared/logging-schema-loader.js';
 
 // The tool table: handlers, safety annotations, and output shapes
@@ -54,10 +55,10 @@ const server = new Server(
 );
 
 /**
- * Which tool groups this process exposes. Set during startup, before the
- * transport is connected, so no request can observe the default.
+ * Which tool groups this process exposes. Assigned in main() before the
+ * transport is connected, so no request can observe it unset.
  */
-let tools: ToolSelection = selectTools(parseToolGroups(undefined).groups);
+let tools: ToolSelection;
 
 /**
  * List available tools
@@ -93,10 +94,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     const schemaCollections = getSchemaCollectionPaths(config.schemas);
 
     for (const [path, definition] of Object.entries(config.schemas)) {
-      const cleanPath = path.replace(/^\/+/, '');
-      const collectionPath = getCollectionPath(cleanPath);
+      const collectionPath = getCollectionPath(normalizePath(path));
 
-      if (!collectionPath || collectionPath.includes('{')) {
+      if (!collectionPath || hasPathParameter(collectionPath)) {
         continue;
       }
 
@@ -156,7 +156,7 @@ server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
   const config = getConfig();
 
   const resourceTemplates = Object.entries(config.schemas).map(([path, definition]) => {
-    const cleanPath = path.replace(/^\/+/, '');
+    const cleanPath = normalizePath(path);
 
     return {
       uriTemplate: `firestore://${cleanPath}`,
@@ -306,11 +306,7 @@ function watchResourceList() {
  * Start the server
  */
 async function main() {
-  // Split flags from the positional [config] [indexes] arguments, so passing
-  // --tools does not get mistaken for a schema path.
-  const argv = process.argv.slice(2);
-  const flags = argv.filter(arg => arg.startsWith('--'));
-  const positional = argv.filter(arg => !arg.startsWith('--'));
+  const { positional, toolsSpec } = parseServerArgs(process.argv.slice(2));
 
   // Get config path from command line args or environment
   const configPath =
@@ -320,11 +316,7 @@ async function main() {
     positional[1] || process.env.FIRESTORE_INDEX_PATH || './firestore.indexes.json';
 
   // Narrow the tool surface. The flag wins over the environment variable.
-  const toolsFlag = flags
-    .find(arg => arg === '--tools' || arg.startsWith('--tools='))
-    ?.split('=')[1];
-
-  const selection = parseToolGroups(toolsFlag ?? process.env.FIREBASE_MCP_TOOLS);
+  const selection = parseToolGroups(toolsSpec ?? process.env.FIREBASE_MCP_TOOLS);
   tools = selectTools(selection.groups);
 
   console.error('[MCP] Firestore MCP Server starting...');

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  hasPathParameter,
   matchPath,
   isValidFirestorePath,
   isPathParameter,
@@ -103,5 +104,26 @@ describe('matchPath', () => {
     expect(r.matched).toBe(true);
     expect(r.schemaPath).toBe('/users/{userId}');
     expect(r.params).toEqual({ userId: 'user-9' });
+  });
+});
+
+describe('hasPathParameter', () => {
+  it('is true when any segment is a parameter', () => {
+    expect(hasPathParameter('users/{userId}')).toBe(true);
+    expect(hasPathParameter('posts/{postId}/comments')).toBe(true);
+  });
+
+  it('is false for a fully concrete path', () => {
+    expect(hasPathParameter('users/user-123')).toBe(false);
+    expect(hasPathParameter('users')).toBe(false);
+  });
+
+  it('ignores surrounding slashes', () => {
+    expect(hasPathParameter('/users/{userId}/')).toBe(true);
+    expect(hasPathParameter('/users/')).toBe(false);
+  });
+
+  it('does not treat a stray brace mid-segment as a parameter', () => {
+    expect(hasPathParameter('users/od{d')).toBe(false);
   });
 });

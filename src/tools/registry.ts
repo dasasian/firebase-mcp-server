@@ -803,6 +803,9 @@ export interface ToolSelection {
   disabledGroup(name: string): ToolGroup | null;
 }
 
+/** The whole catalogue by name, so a lookup never scans the array. */
+const allByName = new Map(TOOL_ENTRIES.map(entry => [entry.tool.name, entry]));
+
 /** Build the tool surface for a given set of groups. */
 export function selectTools(groups: readonly ToolGroup[]): ToolSelection {
   const enabled = new Set(groups);
@@ -815,8 +818,7 @@ export function selectTools(groups: readonly ToolGroup[]): ToolSelection {
     get: name => byName.get(name),
     disabledGroup: name => {
       if (byName.has(name)) return null;
-      const known = TOOL_ENTRIES.find(entry => entry.tool.name === name);
-      return known ? groupOf(known.tool.name) : null;
+      return allByName.has(name) ? groupOf(name) : null;
     },
   };
 }
@@ -840,16 +842,14 @@ export function parseToolGroups(spec: string | undefined): {
     .map(part => part.trim().toLowerCase())
     .filter(Boolean);
 
-  if (requested.length === 0) {
-    return { groups: [...TOOL_GROUPS], unknown: [], usedDefault: true };
-  }
-
   const isGroup = (value: string): value is ToolGroup =>
     (TOOL_GROUPS as readonly string[]).includes(value);
 
   const groups = TOOL_GROUPS.filter(group => requested.includes(group));
   const unknown = requested.filter(value => !isGroup(value));
 
+  // Nothing usable was named — whether the spec was absent, empty, or all
+  // nonsense — so fall back to the whole catalogue.
   if (groups.length === 0) {
     return { groups: [...TOOL_GROUPS], unknown, usedDefault: true };
   }
