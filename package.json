@@ -17,7 +17,7 @@
     "access": "public"
   },
   "bin": {
-    "firebase-mcp": "./dist/cli.js"
+    "firebase-mcp": "dist/cli.js"
   },
   "files": [
     "dist"
