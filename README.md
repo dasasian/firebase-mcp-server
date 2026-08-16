@@ -52,7 +52,7 @@ firebase-mcp start ./firestore-schemas.json
 ```bash
 npm install
 npm run build
-npm run cli -- start --config ./examples/neatpour/firestore-schemas.json
+npm run cli -- start --config ./examples/basic/firestore-schemas.json
 ```
 
 ## @ Mention Support (Resources)

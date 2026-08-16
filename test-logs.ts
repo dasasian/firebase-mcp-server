@@ -5,8 +5,8 @@
  * Tests: executionId | timestamp | labels | raw | recent | default
  */
 
-process.env.FIREBASE_PROJECT_ID = 'neatpour-3f7bd';
-process.env.FIREBASE_SERVICE_ACCOUNT_PATH = '../Service.Accounts/neatpour-3f7bd-firebase-adminsdk-fbsvc-d0843b1015.json';
+process.env.FIREBASE_PROJECT_ID = 'acme-app-12345';
+process.env.FIREBASE_SERVICE_ACCOUNT_PATH = './service-account.json';
 
 import { firebaseFunctionsLogs } from './src/tools/functions/logs.js';
 import { getLogging } from './src/shared/firebase.js';
@@ -44,7 +44,7 @@ async function testTimestamp() {
 async function testLabels() {
   console.log('\n=== TEST: labels.appId filter ===');
   const result = await firebaseFunctionsLogs({
-    where: [{ field: 'labels.appId', operator: '==', value: 'neatpour' }],
+    where: [{ field: 'labels.appId', operator: '==', value: 'acme' }],
     fields: ['timestamp', 'severity', 'jsonPayload', 'labels', 'textPayload'],
     orderBy: [{ field: 'timestamp', direction: 'desc' }],
     limit: 10,
@@ -149,14 +149,14 @@ async function testVerify() {
   // 3. labels.appId filter returns entries
   console.log('\nBug 3: labels.appId (jsonPayload.labels) filter');
   const r3 = await firebaseFunctionsLogs({
-    where: [{ field: 'labels.appId', operator: '==', value: 'neatpour' }],
+    where: [{ field: 'labels.appId', operator: '==', value: 'acme' }],
     orderBy: [{ field: 'timestamp', direction: 'desc' }],
     limit: 5,
     scanLimit: 10000,
   });
   assert('labels.appId filter returns entries', (r3.entries?.length ?? 0) > 0, `got ${r3.totalEntries}`);
-  assert('all entries have appId=neatpour', r3.entries?.every(e =>
-    (e.jsonPayload as any)?.labels?.appId === 'neatpour'
+  assert('all entries have appId=acme', r3.entries?.every(e =>
+    (e.jsonPayload as any)?.labels?.appId === 'acme'
   ) ?? false);
 
   // 4. no duplicate: context.error should not exist when error is top-level

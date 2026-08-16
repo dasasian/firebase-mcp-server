@@ -96,15 +96,17 @@ In your project's `.mcp.json`:
   "mcpServers": {
     "firebase": {
       "type": "stdio",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/Users/damith/Work/Dasasian/firebase-mcp-server/dist/index.js",
-        "./config/firestore-schemas.json",
+        "-y",
+        "@dasasian/firebase-mcp-server",
+        "start",
+        "./firestore-schemas.json",
         "./firestore.indexes.json"
       ],
       "env": {
         "FIREBASE_PROJECT_ID": "your-project-id",
-        "FIREBASE_SERVICE_ACCOUNT_PATH": "./.credentials/service-account.json"
+        "FIREBASE_SERVICE_ACCOUNT_PATH": "./service-account.json"
       }
     }
   }
