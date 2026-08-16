@@ -5,7 +5,7 @@
   "description": "General-purpose MCP server for Firebase (Firestore, Storage, Auth) with schema-driven validation and context-efficient tools",
   "type": "module",
   "main": "dist/index.js",
-  "homepage": "https://github.com/dasasian/firebase-mcp-server#readme",
+  "homepage": "https://dasasian.com/firebase-mcp-server",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dasasian/firebase-mcp-server.git"
