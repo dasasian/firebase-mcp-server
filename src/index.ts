@@ -21,48 +21,12 @@ import { initializeFirebase } from './shared/firebase.js';
 import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, trackDocumentAccess } from './shared/resource-discovery.js';
 import { initializeLoggingSchemaLoader } from './shared/logging-schema-loader.js';
 
-// Import core tools
-import { firestoreRead, firestoreReadTool } from './tools/read.js';
-import { firestoreExport, firestoreExportTool } from './tools/export.js';
-import { firestoreValidate, firestoreValidateTool } from './tools/validate.js';
-import { firestoreImport, firestoreImportTool } from './tools/import.js';
-import { firestoreUpdate, firestoreUpdateTool } from './tools/update.js';
-import { firestoreDelete, firestoreDeleteTool } from './tools/delete.js';
-import { firestoreQuerySelect, firestoreQuerySelectTool } from './tools/query-select.js';
+// The tool table: handlers, safety annotations, and output shapes
+import { TOOL_DEFINITIONS, getToolEntry, validateToolArgs } from './tools/registry.js';
 
-// Import context-efficient tools
-import { firestoreCount, firestoreCountTool } from './tools/count.js';
-import { firestoreSum, firestoreSumTool } from './tools/sum.js';
-import { firestoreStats, firestoreStatsTool } from './tools/stats.js';
-import { firestoreQueryCollectionGroup, firestoreQueryCollectionGroupTool } from './tools/query-collection-group.js';
-import { firestoreShowCollections, firestoreShowCollectionsTool } from './tools/show-collections.js';
-
-// Import Firebase Auth tools
-import { firebaseAuthCreateUser, firebaseAuthCreateUserTool } from './tools/auth/create-user.js';
-import { firebaseAuthListUsers, firebaseAuthListUsersTool } from './tools/auth/list-users.js';
-import { firebaseAuthGetUser, firebaseAuthGetUserTool } from './tools/auth/get-user.js';
-import { firebaseAuthUpdateUser, firebaseAuthUpdateUserTool } from './tools/auth/update-user.js';
-import { firebaseAuthDeleteUser, firebaseAuthDeleteUserTool } from './tools/auth/delete-user.js';
-import { firebaseAuthRevokeSessions, firebaseAuthRevokeSessionsTool } from './tools/auth/revoke-sessions.js';
-
-// Import Firebase Storage tools
-import { firebaseStorageListBuckets, firebaseStorageListBucketsTool } from './tools/storage/list-buckets.js';
-import { firebaseStorageLs, firebaseStorageLsTool } from './tools/storage/ls.js';
-import { firebaseStorageRead, firebaseStorageReadTool } from './tools/storage/read.js';
-import { firebaseStorageUpload, firebaseStorageUploadTool } from './tools/storage/upload.js';
-import { firebaseStorageRm, firebaseStorageRmTool } from './tools/storage/rm.js';
-import { firebaseStorageStat, firebaseStorageStatTool } from './tools/storage/stat.js';
-import { firebaseStorageGetUrl, firebaseStorageGetUrlTool } from './tools/storage/get-url.js';
-import { firebaseStorageCp, firebaseStorageCpTool } from './tools/storage/cp.js';
-import { firebaseStorageMv, firebaseStorageMvTool } from './tools/storage/mv.js';
-import { firebaseStorageFind, firebaseStorageFindTool } from './tools/storage/find.js';
-import { firebaseStorageSync, firebaseStorageSyncTool } from './tools/storage/sync.js';
-import { firebaseStoragePush, firebaseStoragePushTool } from './tools/storage/push.js';
-import { firebaseStorageGetAccess, firebaseStorageGetAccessTool } from './tools/storage/get-access.js';
-import { firebaseStorageSetAccess, firebaseStorageSetAccessTool } from './tools/storage/set-access.js';
-
-// Import Firebase Functions Logging tools
-import { firebaseFunctionsLogs, firebaseFunctionsLogsTool } from './tools/functions/logs.js';
+// Tools used directly to serve resources
+import { firestoreRead } from './tools/read.js';
+import { firestoreExport } from './tools/export.js';
 
 /**
  * Main server instance
@@ -84,49 +48,7 @@ const server = new Server(
  * List available tools
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      // Discovery
-      firestoreShowCollectionsTool,
-      // Core tools
-      firestoreReadTool,
-      firestoreExportTool,
-      firestoreValidateTool,
-      firestoreImportTool,
-      firestoreUpdateTool,
-      firestoreDeleteTool,
-      firestoreQuerySelectTool,
-      firestoreQueryCollectionGroupTool,
-      // Context-efficient tools
-      firestoreCountTool,
-      firestoreSumTool,
-      firestoreStatsTool,
-      // Firebase Auth tools
-      firebaseAuthCreateUserTool,
-      firebaseAuthListUsersTool,
-      firebaseAuthGetUserTool,
-      firebaseAuthUpdateUserTool,
-      firebaseAuthDeleteUserTool,
-      firebaseAuthRevokeSessionsTool,
-      // Firebase Storage tools
-      firebaseStorageListBucketsTool,
-      firebaseStorageLsTool,
-      firebaseStorageReadTool,
-      firebaseStorageUploadTool,
-      firebaseStorageRmTool,
-      firebaseStorageStatTool,
-      firebaseStorageGetUrlTool,
-      firebaseStorageCpTool,
-      firebaseStorageMvTool,
-      firebaseStorageFindTool,
-      firebaseStorageSyncTool,
-      firebaseStoragePushTool,
-      firebaseStorageGetAccessTool,
-      firebaseStorageSetAccessTool,
-      // Firebase Functions Logging tools
-      firebaseFunctionsLogsTool,
-    ],
-  };
+  return { tools: TOOL_DEFINITIONS };
 });
 
 /**
@@ -251,353 +173,43 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
+  const entry = getToolEntry(name);
+
+  if (!entry) {
+    return errorResult(`Unknown tool: ${name}`);
+  }
+
+  const invalid = validateToolArgs(entry, args ?? {});
+
+  if (invalid) {
+    return errorResult(invalid);
+  }
+
   try {
-    switch (name) {
-      case 'firestore_show_collections':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreShowCollections(), null, 2),
-            },
-          ],
-        };
+    const result = await entry.run(args ?? {});
 
-      case 'firestore_read':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreRead(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_export':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreExport(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_validate':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreValidate(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_import':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreImport(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_update':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreUpdate(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_delete':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreDelete(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_query_select':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreQuerySelect(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_query_collection_group':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreQueryCollectionGroup(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_count':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreCount(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_sum':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreSum(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firestore_stats':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firestoreStats(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_create_user':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthCreateUser(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_list_users':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthListUsers(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_get_user':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthGetUser(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_update_user':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthUpdateUser(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_delete_user':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthDeleteUser(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_auth_revoke_sessions':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseAuthRevokeSessions(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_list_buckets':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageListBuckets(), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_ls':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageLs(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_read':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageRead(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_upload':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageUpload(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_rm':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageRm(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_stat':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageStat(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_get_url':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageGetUrl(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_cp':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageCp(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_mv':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageMv(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_find':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageFind(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_sync':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageSync(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_push':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStoragePush(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_get_access':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageGetAccess(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_storage_set_access':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseStorageSetAccess(args as any), null, 2),
-            },
-          ],
-        };
-
-      case 'firebase_functions_logs':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await firebaseFunctionsLogs(args as any), null, 2),
-            },
-          ],
-        };
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
-    }
-  } catch (error) {
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
+      // `content` keeps older clients working; `structuredContent` is the
+      // typed result described by the tool's outputSchema.
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      structuredContent: result as Record<string, unknown>,
     };
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : String(error));
   }
 });
+
+/**
+ * Build a tool result that reports failure to the model rather than throwing.
+ * Error results carry no structuredContent — the spec exempts them from the
+ * tool's outputSchema.
+ */
+function errorResult(message: string) {
+  return {
+    content: [{ type: 'text', text: `Error: ${message}` }],
+    isError: true,
+  };
+}
 
 /**
  * Start the server
