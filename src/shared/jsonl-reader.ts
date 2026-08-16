@@ -14,6 +14,8 @@ export interface LogEntry {
   functionName?: string;
   executionId?: string;
   textPayload?: string;
+  /** Log text from whichever of textPayload / jsonPayload.message the entry carries. */
+  message?: string;
   jsonPayload?: Record<string, unknown>;
   region?: string;
   labels?: Record<string, string>;
@@ -96,13 +98,17 @@ function normalizeEntry(raw: any): LogEntry {
   // Generate insertId if missing
   const insertId = raw.insertId || `local-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
+  const textPayload = raw.textPayload || raw.message;
+  const jsonPayload = raw.jsonPayload || (typeof raw.payload === 'object' ? raw.payload : undefined);
+
   return {
     timestamp: raw.timestamp || new Date().toISOString(),
     severity: raw.severity || 'DEFAULT',
     functionName: raw.functionName || raw.labels?.functionName || 'unknown',
     executionId: raw.executionId || raw.labels?.executionId,
-    textPayload: raw.textPayload || raw.message,
-    jsonPayload: raw.jsonPayload || (typeof raw.payload === 'object' ? raw.payload : undefined),
+    textPayload,
+    message: textPayload ?? (typeof jsonPayload?.message === 'string' ? jsonPayload.message : undefined),
+    jsonPayload,
     region: raw.region || raw.labels?.region,
     labels: raw.labels || {},
     resource: raw.resource || {},

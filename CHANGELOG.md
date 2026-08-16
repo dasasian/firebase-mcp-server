@@ -5,6 +5,37 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`firebase_functions_logs` returned nothing for gen2 functions.** The Cloud Run
+  service name was derived by kebab-casing the function name (`extractReceipt` →
+  `extract-receipt`), but Firebase only lowercases it (`extractreceipt`), so the
+  filter matched no entries. `functionName` now also compares case-insensitively
+  client-side, so a camelCase name finds its gen2 service either way. A valid
+  function name returning zero rows was indistinguishable from a function that had
+  never run.
+- **Structured logs looked empty.** Firebase's structured logger writes
+  `jsonPayload.message` and no `textPayload`, so selecting `textPayload` — which the
+  tool description suggested — returned entries with no text. Every entry now carries
+  a `message` field holding whichever payload has the text, and `textPayload` falls
+  back to it in projections, `LIKE` searches and `GROUP BY`.
+- **Audit-log entries blew the token limit.** An unfiltered query could return
+  300k+ characters, nearly all of it one protobuf `AuditLog` payload serialised as a
+  byte-by-byte integer array. Cloud Audit Logs are now excluded by default (opt back
+  in with `includeAuditLogs: true`), and any binary blob in a payload is replaced
+  with a `<Buffer N bytes>` placeholder.
+
+### Changed
+
+- **Documented the IAM role the logs tool actually needs.** A Firebase Admin SDK
+  service account has no Cloud Logging access at all, so `firebase_functions_logs`
+  fails with `PERMISSION_DENIED: Permission denied for all log views` while every
+  other tool works. README and the logging guide now call for
+  `roles/logging.viewAccessor` and note that `roles/logging.viewer` alone may not be
+  enough.
+
 ## [1.1.0] - 2026-08-16
 
 ### Added

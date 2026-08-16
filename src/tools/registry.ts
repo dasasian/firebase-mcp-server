@@ -762,6 +762,7 @@ export const TOOL_ENTRIES: ToolEntry[] = [
                 functionName: str,
                 executionId: str,
                 textPayload: str,
+                message: str,
                 jsonPayload: anyMap,
                 region: str,
                 labels: strMap,

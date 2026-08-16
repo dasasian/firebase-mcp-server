@@ -12,6 +12,7 @@ import {
   processGroupBy,
   projectFields,
   applyOrdering,
+  sanitizePayload,
 } from '../../shared/logging-query-processor.js';
 
 export interface FirebaseFunctionsLogsInput {
@@ -36,6 +37,7 @@ export interface FirebaseFunctionsLogsInput {
   }>;
   limit?: number;       // Default: 100, Max: 1000
   scanLimit?: number;   // Default: 5000, Max: 10000
+  includeAuditLogs?: boolean;  // Include Cloud Audit Logs (deploy/admin activity). Default: false
 }
 
 export interface FirebaseFunctionsLogsOutput {
@@ -45,6 +47,7 @@ export interface FirebaseFunctionsLogsOutput {
     functionName: string;
     executionId?: string;
     textPayload?: string;
+    message?: string;
     jsonPayload?: Record<string, unknown>;
     region?: string;
     labels?: Record<string, string>;
@@ -75,7 +78,8 @@ export async function firebaseFunctionsLogs(
       aggregates = [],
       orderBy = [],
       limit = 100,
-      scanLimit = 5000
+      scanLimit = 5000,
+      includeAuditLogs = false
     } = input;
 
     // Validate limits
@@ -123,7 +127,7 @@ export async function firebaseFunctionsLogs(
       }
     } else {
       // Query Cloud Logging (existing logic)
-      cloudLoggingFilter = buildCloudLoggingFilter(resourceTypes, where);
+      cloudLoggingFilter = buildCloudLoggingFilter(resourceTypes, where, includeAuditLogs);
 
       // Get Cloud Logging client (uses same credentials as Firebase)
       const logging = await getLogging();
@@ -194,8 +198,15 @@ export async function firebaseFunctionsLogs(
   }
 }
 
-function toKebabCase(str: string): string {
-  return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+/**
+ * Cloud Run service name for a gen2 function.
+ *
+ * Firebase lowercases the function name — `extractReceipt` deploys as the service
+ * `extractreceipt`. It does not kebab-case it, so a kebab-cased guess matches no
+ * entries and the query returns zero rows for a function that is logging fine.
+ */
+function toServiceName(str: string): string {
+  return str.toLowerCase();
 }
 
 /**
@@ -203,7 +214,8 @@ function toKebabCase(str: string): string {
  */
 function buildCloudLoggingFilter(
   resourceTypes: string[],
-  where: Array<{ field: string; operator: string; value: unknown }>
+  where: Array<{ field: string; operator: string; value: unknown }>,
+  includeAuditLogs: boolean
 ): string {
   // Build resource type filter (supports multiple types)
   const resourceTypeFilter = resourceTypes.length === 1
@@ -211,6 +223,13 @@ function buildCloudLoggingFilter(
     : `(${resourceTypes.map(t => `resource.type="${t}"`).join(' OR ')})`;
 
   const filters: string[] = [resourceTypeFilter];
+
+  // Deploy/admin audit entries carry a protobuf AuditLog payload that serialises to
+  // thousands of bytes of noise, and are almost never what a function debug session
+  // wants. Excluded unless asked for.
+  if (!includeAuditLogs) {
+    filters.push('NOT logName:"cloudaudit.googleapis.com"');
+  }
 
   for (const clause of where) {
     // Skip operators handled client-side
@@ -225,11 +244,11 @@ function buildCloudLoggingFilter(
       if (operator === 'in' && Array.isArray(value)) {
         const conditions = value.flatMap(v => [
           `resource.labels.function_name="${v}"`,
-          `resource.labels.service_name="${toKebabCase(String(v))}"`,
+          `resource.labels.service_name="${toServiceName(String(v))}"`,
         ]).join(' OR ');
         filters.push(`(${conditions})`);
       } else if (operator === '==') {
-        filters.push(`(resource.labels.function_name="${value}" OR resource.labels.service_name="${toKebabCase(String(value))}")`);
+        filters.push(`(resource.labels.function_name="${value}" OR resource.labels.service_name="${toServiceName(String(value))}")`);
       }
     } else if (field === 'executionId') {
       filters.push(`labels.execution_id="${value}"`);
@@ -266,12 +285,12 @@ function buildCloudLoggingFilter(
       } else if (operator === '==') {
         filters.push(`(labels.${labelKey}="${value}" OR jsonPayload.labels.${labelKey}="${value}")`);
       }
-    } else if (field === 'textPayload') {
-      // Only handle simple equality for textPayload in Cloud Logging filter
+    } else if (field === 'textPayload' || field === 'message') {
+      // Only handle simple equality here; LIKE is handled client-side.
+      // Match both payload shapes — structured logs have no textPayload at all.
       if (operator === '==') {
-        filters.push(`textPayload="${value}"`);
+        filters.push(`(textPayload="${value}" OR jsonPayload.message="${value}")`);
       }
-      // LIKE handled client-side
     }
   }
 
@@ -310,7 +329,12 @@ function processLogEntry(entry: any): any {
   // entry.data is the payload: string = textPayload, object = jsonPayload
   const isJsonPayload = data !== null && data !== undefined && typeof data === 'object';
   const textPayload = isJsonPayload ? undefined : (data ? String(data) : undefined);
-  const jsonPayload = isJsonPayload ? data : undefined;
+  const jsonPayload = isJsonPayload ? sanitizePayload(data) : undefined;
+
+  // Firebase's structured logger writes jsonPayload.message, never textPayload.
+  // `message` is whichever of the two is present, so callers have one field to read.
+  const jsonMessage = (jsonPayload as any)?.message;
+  const message = textPayload ?? (typeof jsonMessage === 'string' ? jsonMessage : undefined);
 
   return {
     timestamp,
@@ -318,6 +342,7 @@ function processLogEntry(entry: any): any {
     functionName: metadata.resource?.labels?.function_name || metadata.resource?.labels?.service_name || 'unknown',
     executionId: metadata.labels?.execution_id,
     textPayload,
+    message,
     jsonPayload,
     region: metadata.resource?.labels?.region || metadata.resource?.labels?.location,
     labels: metadata.labels || {},
@@ -390,13 +415,13 @@ export const firebaseFunctionsLogsTool = {
     '\n\nDISCOVERY EXAMPLES (call these first): ' +
     '\n- List all functions: {"distinct": "functionName"} ' +
     '\n- Function health: {"groupBy": ["functionName", "severity"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}]} ' +
-    '\n- Top errors: {"groupBy": ["textPayload"], "aggregates": [{"field": "*", "operation": "count", "alias": "occurrences"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "occurrences", "direction": "desc"}], "limit": 10} ' +
+    '\n- Top errors: {"groupBy": ["message"], "aggregates": [{"field": "*", "operation": "count", "alias": "occurrences"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "occurrences", "direction": "desc"}], "limit": 10} ' +
     '\n- What environments exist: {"distinct": "labels.environment"} ' +
     '\n- Error rate by environment: {"groupBy": ["labels.environment"], "aggregates": [{"field": "*", "operation": "count"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}]} ' +
     '\n\nRAW LOG EXAMPLES: ' +
     '\n- Recent logs: {"limit": 50} ' +
-    '\n- Function errors: {"where": [{"field": "functionName", "operator": "==", "value": "sendEmail"}, {"field": "severity", "operator": "==", "value": "ERROR"}], "fields": ["timestamp", "textPayload"]} ' +
-    '\n- Search text: {"where": [{"field": "textPayload", "operator": "LIKE", "value": "%timeout%"}]} ' +
+    '\n- Function errors: {"where": [{"field": "functionName", "operator": "==", "value": "sendEmail"}, {"field": "severity", "operator": "==", "value": "ERROR"}], "fields": ["timestamp", "message"]} ' +
+    '\n- Search text: {"where": [{"field": "message", "operator": "LIKE", "value": "%timeout%"}]} ' +
     '\n- Execution trace: {"where": [{"field": "executionId", "operator": "==", "value": "abc123"}], "orderBy": [{"field": "timestamp", "direction": "asc"}]} ' +
     '\n\nLABEL-BASED FILTERING (custom user labels): ' +
     '\n- User logs: {"where": [{"field": "labels.user_id", "operator": "==", "value": "123"}]} ' +
@@ -405,9 +430,12 @@ export const firebaseFunctionsLogsTool = {
     '\n\nERROR SUMMARY EXAMPLE (group by error type): ' +
     '\n- {"groupBy": ["jsonPayload.error.name"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}, {"field": "timestamp", "operation": "max", "alias": "last_seen"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "count", "direction": "desc"}]} ' +
     '\n- Project nested fields: {"fields": ["timestamp", "jsonPayload.error.name", "jsonPayload.error.message", "jsonPayload.context.screen"]} ' +
-    '\n\nQueryable fields: functionName, severity, timestamp, executionId, region, textPayload, jsonPayload, jsonPayload.* (dot-notation for any nested path), labels.* ' +
+    '\n\nQueryable fields: functionName, severity, timestamp, executionId, region, message, textPayload, jsonPayload, jsonPayload.* (dot-notation for any nested path), labels.* ' +
+    '\n\nUSE `message`, NOT `textPayload`: Firebase\'s structured logger writes jsonPayload.message and no textPayload at all. `message` is whichever of the two the entry has. ' +
+    '\nfunctionName matches case-insensitively, so gen2 functions (which log under a lowercased Cloud Run service name) are found by their camelCase name. ' +
+    '\nCloud Audit Logs (deploy/admin activity) are excluded by default — pass {"includeAuditLogs": true} to see them. ' +
     '\nField projection reduces token usage. LIKE patterns for text search. GROUP BY works with labels. ' +
-    '\nRequires IAM role: roles/logging.viewer (minimum).',
+    '\nRequires IAM role: roles/logging.viewAccessor on the service account (roles/logging.viewer alone may not be enough).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -426,7 +454,7 @@ export const firebaseFunctionsLogsTool = {
       fields: {
         type: 'array',
         items: { type: 'string' },
-        description: 'SELECT specific fields (e.g., ["timestamp", "severity", "textPayload"]). Omit for all fields.',
+        description: 'SELECT specific fields (e.g., ["timestamp", "severity", "message"]). Use "message" for log text — structured logs have no textPayload. Omit for all fields.',
       },
       distinct: {
         type: 'string',
@@ -440,7 +468,7 @@ export const firebaseFunctionsLogsTool = {
           properties: {
             field: {
               type: 'string',
-              description: 'Field name: functionName, severity, timestamp, executionId, region, textPayload, labels.*',
+              description: 'Field name: functionName, severity, timestamp, executionId, region, message, textPayload, labels.*',
             },
             operator: {
               type: 'string',
@@ -507,6 +535,11 @@ export const firebaseFunctionsLogsTool = {
         type: 'number',
         description: 'Maximum logs to fetch before filtering (default: 5000, max: 10000). Increase for broader searches.',
         default: 5000,
+      },
+      includeAuditLogs: {
+        type: 'boolean',
+        description: 'Include Cloud Audit Logs (deploy and admin activity). Excluded by default: their protobuf payloads are large and rarely useful when debugging a function.',
+        default: false,
       },
     },
   },

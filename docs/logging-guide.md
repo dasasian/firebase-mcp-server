@@ -64,16 +64,27 @@ The `firebase_functions_logs` tool provides SQL-like queries for Cloud Functions
 
 ## IAM Setup
 
-The service account needs the **Logs Viewer** role to access Cloud Functions logs.
+The service account needs Cloud Logging access, and a Firebase Admin SDK service
+account has **none** by default — it is provisioned for Firestore, Auth and Storage
+only. So every other tool works and only this one fails, with:
+
+```
+Error: 7 PERMISSION_DENIED: Permission denied for all log views
+```
 
 ### Grant Permission
 
 ```bash
 # Replace with your project ID and service account email
+# (typically firebase-adminsdk-xxxxx@PROJECT_ID.iam.gserviceaccount.com)
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/logging.viewer"
+  --role="roles/logging.viewAccessor"
 ```
+
+`roles/logging.viewer` alone may not be enough: the error names *log views*, and the
+`logging.views.access` permission that covers them is in `viewAccessor`. IAM changes
+can take a few minutes to take effect, so retry before assuming the role was wrong.
 
 ### Verify Permission
 
@@ -87,7 +98,8 @@ gcloud projects get-iam-policy PROJECT_ID \
 
 | Role | Access Level | Use Case |
 |------|--------------|----------|
-| `roles/logging.viewer` | Standard logs | **Recommended** - debugging, monitoring |
+| `roles/logging.viewAccessor` | Log views | **Recommended** - what this tool needs |
+| `roles/logging.viewer` | Standard logs | Often granted too, but may not be sufficient alone |
 | `roles/logging.privateLogViewer` | Includes Data Access logs | When Data Access logs needed |
 
 ## Query Patterns
@@ -199,11 +211,25 @@ Run these FIRST when exploring logs to understand what data exists.
 | `functionName` | Cloud Function name | "sendEmail", "processOrder" |
 | `severity` | Log severity level | ERROR, WARNING, INFO, DEBUG |
 | `timestamp` | Log entry timestamp | "2026-01-13T15:30:00Z" |
-| `textPayload` | Unstructured log text | "Error sending email: timeout" |
+| `message` | Log text, from whichever payload holds it | "Error sending email: timeout" |
+| `textPayload` | Unstructured log text (plain `console.log`) | "Error sending email: timeout" |
 | `jsonPayload` | Structured log data | {"error": "timeout", "userId": "123"} |
 | `executionId` | Function execution ID | "abc123..." |
 | `region` | Cloud region | "us-central1" |
 | `labels.*` | Custom labels (see Labels section) | "labels.user_id", "labels.environment" |
+
+**Prefer `message` over `textPayload`.** Firebase's structured logger (and
+`firebase-structured-logger`) writes `jsonPayload.message` and no `textPayload` at all,
+so a query that selects `textPayload` on a v2 function returns entries with no text in
+them — which reads as "these logs are empty" rather than "wrong field". `message` is
+whichever of the two the entry carries. Asking for `textPayload` now falls back to
+`message`, in projections, `LIKE` searches and `GROUP BY` alike, but naming `message`
+is clearer.
+
+**Cloud Audit Logs are excluded by default.** Deploy and admin-activity entries carry a
+protobuf payload that serialises to hundreds of kilobytes of raw bytes and is rarely
+what a function debug session wants. Pass `{"includeAuditLogs": true}` to include them;
+binary blobs in any payload are replaced with a `<Buffer N bytes>` placeholder.
 
 ### Aggregation
 
@@ -669,17 +695,21 @@ export const apiCall = onCall(async (request) => {
 
 **Error**: `Permission denied` or `403 Forbidden`
 
-**Solution**: Grant `roles/logging.viewer` to service account:
+**Solution**: Grant `roles/logging.viewAccessor` to the service account:
 ```bash
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/logging.viewer"
+  --role="roles/logging.viewAccessor"
 ```
+
+See [IAM Setup](#iam-setup) — a Firebase Admin SDK service account has no logging
+access at all until you do this.
 
 ### No Logs Returned
 
 **Check**:
-1. Function name is correct (case-sensitive)
+1. Function name is correct (matched case-insensitively, so `extractReceipt` also
+   finds the gen2 Cloud Run service `extractreceipt`)
 2. Time range includes recent executions
 3. Logs exist in Cloud Logging console
 4. Service account has correct project

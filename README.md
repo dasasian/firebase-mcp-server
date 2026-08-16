@@ -176,6 +176,20 @@ tool from a group you switched off returns an error naming the group to add.
 because they write: the first downloads to a local temp file, the second updates
 its auto-discovered logging schema on disk.
 
+> **Reading function logs needs an extra IAM role.** The Firebase Admin SDK service
+> account has no Cloud Logging access by default, so `firebase_functions_logs` fails
+> with `PERMISSION_DENIED: Permission denied for all log views` even when every other
+> tool works. Grant the role and allow a few minutes for it to take effect:
+>
+> ```bash
+> gcloud projects add-iam-policy-binding PROJECT_ID \
+>   --member="serviceAccount:firebase-adminsdk-xxxxx@PROJECT_ID.iam.gserviceaccount.com" \
+>   --role="roles/logging.viewAccessor"
+> ```
+>
+> `roles/logging.viewer` alone may not be enough — the error names *log views*, and the
+> `logging.views.access` permission is in `viewAccessor`.
+
 **Example queries:**
 ```json
 // Discover what functions exist
@@ -184,8 +198,8 @@ its auto-discovered logging schema on disk.
 // Show recent errors
 {"where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "limit": 20}
 
-// Top error patterns with counts
-{"groupBy": ["textPayload"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "count", "direction": "desc"}], "limit": 10}
+// Top error patterns with counts (use "message" — structured logs have no textPayload)
+{"groupBy": ["message"], "aggregates": [{"field": "*", "operation": "count", "alias": "count"}], "where": [{"field": "severity", "operator": "==", "value": "ERROR"}], "orderBy": [{"field": "count", "direction": "desc"}], "limit": 10}
 
 // Filter by custom labels (e.g., user, environment)
 {"where": [{"field": "labels.user_id", "operator": "==", "value": "123"}]}

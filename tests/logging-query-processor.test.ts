@@ -8,6 +8,8 @@ import {
   projectFields,
   applyOrdering,
   executeQuery,
+  resolveFieldValue,
+  sanitizePayload,
 } from '../src/shared/logging-query-processor.js';
 
 const entry = (over: Record<string, unknown> = {}) => ({
@@ -477,5 +479,145 @@ describe('executeQuery', () => {
     });
     expect(out.entries).toEqual([]);
     expect(out.totalEntries).toBe(0);
+  });
+});
+
+describe('resolveFieldValue', () => {
+  it('reads a field that is present', () => {
+    expect(resolveFieldValue(entry(), 'textPayload')).toBe('hello world');
+  });
+
+  it('falls back from textPayload to message for structured logs', () => {
+    const e = entry({ textPayload: undefined, message: 'structured line' });
+    expect(resolveFieldValue(e, 'textPayload')).toBe('structured line');
+  });
+
+  it('falls back from message to jsonPayload.message', () => {
+    const e = { jsonPayload: { message: 'deep line' } };
+    expect(resolveFieldValue(e, 'message')).toBe('deep line');
+  });
+
+  it('falls back from labels.* to jsonPayload.labels.*', () => {
+    const e = { jsonPayload: { labels: { env: 'prod' } } };
+    expect(resolveFieldValue(e, 'labels.env')).toBe('prod');
+  });
+
+  it('returns undefined when neither shape has the field', () => {
+    expect(resolveFieldValue(entry(), 'nope')).toBeUndefined();
+  });
+});
+
+describe('functionName matching is case-insensitive (gen2 service names)', () => {
+  // A gen2 function logs under the lowercased Cloud Run service name.
+  const gen2 = entry({ functionName: 'extractreceipt' });
+
+  it('matches a camelCase name against the lowercased service name', () => {
+    const out = applyClientSideFiltering(
+      [gen2],
+      [{ field: 'functionName', operator: '==', value: 'extractReceipt' }]
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it('matches inside an "in" list', () => {
+    const out = applyClientSideFiltering(
+      [gen2],
+      [{ field: 'functionName', operator: 'in', value: ['sendEmail', 'extractReceipt'] }]
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it('excludes a case-insensitive match under !=', () => {
+    const out = applyClientSideFiltering(
+      [gen2],
+      [{ field: 'functionName', operator: '!=', value: 'extractReceipt' }]
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('still rejects a different function', () => {
+    const out = applyClientSideFiltering(
+      [gen2],
+      [{ field: 'functionName', operator: '==', value: 'sendEmail' }]
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('leaves other fields case-sensitive', () => {
+    const out = applyClientSideFiltering(
+      [entry({ severity: 'ERROR' })],
+      [{ field: 'severity', operator: '==', value: 'error' }]
+    );
+    expect(out).toEqual([]);
+  });
+});
+
+describe('structured-log message handling', () => {
+  const structured = entry({ textPayload: undefined, message: 'SMTP timeout' });
+
+  it('projects message when textPayload was requested but is absent', () => {
+    const out = projectFields(structured, ['timestamp', 'textPayload']);
+    expect(out.message).toBe('SMTP timeout');
+    expect(out).not.toHaveProperty('textPayload');
+  });
+
+  it('still projects textPayload when the entry has one', () => {
+    const out = projectFields(entry(), ['textPayload']);
+    expect(out).toEqual({ textPayload: 'hello world' });
+  });
+
+  it('matches a LIKE search on textPayload against the message', () => {
+    const out = applyClientSideFiltering(
+      [structured],
+      [{ field: 'textPayload', operator: 'LIKE', value: '%timeout%' }]
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it('groups structured entries by message under a textPayload groupBy', () => {
+    const out = processGroupBy(
+      [structured, structured],
+      ['textPayload'],
+      [{ field: '*', operation: 'count', alias: 'count' }],
+      [], 10, ''
+    );
+    expect(out.aggregatedResults).toEqual([{ textPayload: 'SMTP timeout', count: 2 }]);
+  });
+});
+
+describe('sanitizePayload', () => {
+  it('replaces a JSON-shaped Buffer with a short placeholder', () => {
+    const payload = {
+      type_url: 'type.googleapis.com/google.cloud.audit.AuditLog',
+      value: { type: 'Buffer', data: [18, 0, 26, 123] },
+    };
+    expect(sanitizePayload(payload)).toEqual({
+      type_url: 'type.googleapis.com/google.cloud.audit.AuditLog',
+      value: '<Buffer 4 bytes>',
+    });
+  });
+
+  it('replaces a real Buffer', () => {
+    expect(sanitizePayload({ v: Buffer.from('abc') })).toEqual({ v: '<Buffer 3 bytes>' });
+  });
+
+  it('replaces a typed array', () => {
+    expect(sanitizePayload({ v: new Uint8Array(8) })).toEqual({ v: '<Uint8Array 8 bytes>' });
+  });
+
+  it('leaves ordinary payloads untouched', () => {
+    const payload = { message: 'hi', error: { name: 'TypeError' }, tags: ['a', 'b'] };
+    expect(sanitizePayload(payload)).toEqual(payload);
+  });
+
+  it('passes primitives and null through', () => {
+    expect(sanitizePayload('x')).toBe('x');
+    expect(sanitizePayload(null)).toBeNull();
+  });
+
+  it('truncates payloads nested past the depth cap', () => {
+    let deep: any = 'bottom';
+    for (let i = 0; i < 20; i++) deep = { next: deep };
+    expect(JSON.stringify(sanitizePayload(deep))).toContain('nesting too deep');
   });
 });

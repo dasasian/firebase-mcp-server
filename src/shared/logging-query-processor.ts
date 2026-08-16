@@ -20,6 +20,7 @@ export interface FirebaseFunctionsLogsOutput {
     functionName: string;
     executionId?: string;
     textPayload?: string;
+    message?: string;
     jsonPayload?: Record<string, unknown>;
     region?: string;
     labels?: Record<string, string>;
@@ -42,48 +43,40 @@ export function applyClientSideFiltering(
 ): any[] {
   return entries.filter(entry => {
     for (const clause of where) {
+      const fieldValue = resolveFieldValue(entry, clause.field);
+
       if (clause.operator === 'LIKE') {
         if (!matchesLikeClause(entry, clause)) {
           return false;
         }
       } else if (clause.operator === '!=') {
         // != not supported by Cloud Logging, handle client-side
-        const fieldValue = getNestedValue(entry, clause.field);
-        if (fieldValue === clause.value) {
+        if (valuesEqual(clause.field, fieldValue, clause.value)) {
           return false;
         }
       } else if (clause.operator === '==') {
-        let fieldValue = getNestedValue(entry, clause.field);
-        // For labels.* fields, also check jsonPayload.labels.* (Cloud Run v2 logs)
-        if (fieldValue === undefined && clause.field.startsWith('labels.')) {
-          fieldValue = getNestedValue(entry, `jsonPayload.${clause.field}`);
-        }
-        if (fieldValue !== clause.value) {
+        if (!valuesEqual(clause.field, fieldValue, clause.value)) {
           return false;
         }
       } else if (clause.operator === '<') {
-        const fieldValue = getNestedValue(entry, clause.field);
         if (!((fieldValue as any) < (clause.value as any))) {
           return false;
         }
       } else if (clause.operator === '<=') {
-        const fieldValue = getNestedValue(entry, clause.field);
         if (!((fieldValue as any) <= (clause.value as any))) {
           return false;
         }
       } else if (clause.operator === '>') {
-        const fieldValue = getNestedValue(entry, clause.field);
         if (!((fieldValue as any) > (clause.value as any))) {
           return false;
         }
       } else if (clause.operator === '>=') {
-        const fieldValue = getNestedValue(entry, clause.field);
         if (!((fieldValue as any) >= (clause.value as any))) {
           return false;
         }
       } else if (clause.operator === 'in') {
-        const fieldValue = getNestedValue(entry, clause.field);
-        if (!Array.isArray(clause.value) || !clause.value.includes(fieldValue as any)) {
+        if (!Array.isArray(clause.value) ||
+            !clause.value.some(v => valuesEqual(clause.field, fieldValue, v))) {
           return false;
         }
       }
@@ -94,13 +87,28 @@ export function applyClientSideFiltering(
 }
 
 /**
+ * Compare a field value to a clause value.
+ *
+ * `functionName` compares case-insensitively: gen2 functions log under a Cloud Run
+ * service name that is the function name lowercased (`extractReceipt` ->
+ * `extractreceipt`), so an exact compare silently drops every gen2 entry.
+ */
+function valuesEqual(field: string, fieldValue: unknown, clauseValue: unknown): boolean {
+  if (field === 'functionName' &&
+      typeof fieldValue === 'string' && typeof clauseValue === 'string') {
+    return fieldValue.toLowerCase() === clauseValue.toLowerCase();
+  }
+  return fieldValue === clauseValue;
+}
+
+/**
  * Check if entry matches LIKE clause
  */
 export function matchesLikeClause(
   entry: any,
   clause: { field: string; value: unknown }
 ): boolean {
-  const fieldValue = getNestedValue(entry, clause.field);
+  const fieldValue = resolveFieldValue(entry, clause.field);
 
   if (typeof fieldValue !== 'string' || typeof clause.value !== 'string') {
     return false;
@@ -136,6 +144,72 @@ export function getNestedValue(obj: any, path: string): unknown {
   return current;
 }
 
+/** Depth cap for payload sanitising — deep enough for real logs, cheap to walk. */
+const MAX_SANITIZE_DEPTH = 12;
+
+/**
+ * Replace binary blobs in a payload with a short placeholder.
+ *
+ * Audit-log entries hold a protobuf whose `value` is a Node Buffer. JSON.stringify
+ * renders that as thousands of integers — hundreds of kilobytes of zero-value output
+ * that can blow a client's token limit on its own.
+ */
+export function sanitizePayload(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= MAX_SANITIZE_DEPTH) return '<truncated: nesting too deep>';
+
+  if (isBufferLike(value)) {
+    const bytes = Buffer.isBuffer(value)
+      ? value.length
+      : (value as { data: unknown[] }).data.length;
+    return `<Buffer ${bytes} bytes>`;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return `<${value.constructor.name} ${value.byteLength} bytes>`;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(v => sanitizePayload(v, depth + 1));
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = sanitizePayload(v, depth + 1);
+  }
+  return out;
+}
+
+/** A Node Buffer, or its JSON form `{ type: 'Buffer', data: [...] }`. */
+function isBufferLike(value: object): boolean {
+  if (Buffer.isBuffer(value)) return true;
+  const candidate = value as { type?: unknown; data?: unknown };
+  return candidate.type === 'Buffer' && Array.isArray(candidate.data);
+}
+
+/**
+ * Read a field from an entry, with the fallbacks the two log shapes need.
+ *
+ * - `textPayload` falls back to `message` (which is `jsonPayload.message` for
+ *   structured logs) — Firebase's structured logger never writes textPayload.
+ * - `labels.*` falls back to `jsonPayload.labels.*` (Cloud Run v2 logs).
+ */
+export function resolveFieldValue(entry: any, field: string): unknown {
+  const direct = getNestedValue(entry, field);
+  if (direct !== undefined) return direct;
+
+  if (field === 'textPayload') {
+    return getNestedValue(entry, 'message');
+  }
+  if (field === 'message') {
+    return getNestedValue(entry, 'jsonPayload.message');
+  }
+  if (field.startsWith('labels.')) {
+    return getNestedValue(entry, `jsonPayload.${field}`);
+  }
+  return undefined;
+}
+
 /**
  * Handle DISTINCT query
  */
@@ -147,7 +221,7 @@ export function processDistinct(
   const uniqueValues = new Set<string>();
 
   for (const entry of entries) {
-    const value = getNestedValue(entry, distinct);
+    const value = resolveFieldValue(entry, distinct);
     if (value !== undefined && value !== null) {
       uniqueValues.add(String(value));
     }
@@ -181,7 +255,7 @@ export function processGroupBy(
 
   for (const entry of entries) {
     const keyParts = groupBy.map(field => {
-      const value = getNestedValue(entry, field);
+      const value = resolveFieldValue(entry, field);
       return value !== undefined ? String(value) : 'null';
     });
     const key = keyParts.join('||');
@@ -215,7 +289,7 @@ export function processGroupBy(
         if (agg.field === '*') {
           result[alias] = groupEntries.length;
         } else {
-          const values = groupEntries.map(e => getNestedValue(e, agg.field)).filter(v => v !== undefined);
+          const values = groupEntries.map(e => resolveFieldValue(e, agg.field)).filter(v => v !== undefined);
           if (values.length > 0) {
             // Find max value (handle dates, numbers, strings)
             result[alias] = values.reduce((max, v) => {
@@ -229,7 +303,7 @@ export function processGroupBy(
         if (agg.field === '*') {
           result[alias] = groupEntries.length;
         } else {
-          const values = groupEntries.map(e => getNestedValue(e, agg.field)).filter(v => v !== undefined);
+          const values = groupEntries.map(e => resolveFieldValue(e, agg.field)).filter(v => v !== undefined);
           if (values.length > 0) {
             // Find min value (handle dates, numbers, strings)
             result[alias] = values.reduce((min, v) => {
@@ -284,6 +358,13 @@ export function projectFields(entry: any, fields: string[]): any {
       if (value !== undefined) {
         projected[field] = value;
       }
+    } else if (field === 'textPayload' && entry.textPayload === undefined) {
+      // Structured logs carry the text in jsonPayload.message, surfaced as `message`.
+      // Asking for textPayload alone would otherwise return content-free entries.
+      const message = resolveFieldValue(entry, 'message');
+      if (message !== undefined) {
+        projected.message = message;
+      }
     } else if (field in entry) {
       projected[field] = entry[field];
     }
@@ -305,8 +386,8 @@ export function applyOrdering(
 
   return entries.sort((a, b) => {
     for (const order of orderBy) {
-      const aVal = getNestedValue(a, order.field);
-      const bVal = getNestedValue(b, order.field);
+      const aVal = resolveFieldValue(a, order.field);
+      const bVal = resolveFieldValue(b, order.field);
       const direction = order.direction === 'desc' ? -1 : 1;
 
       // Handle undefined/null values
