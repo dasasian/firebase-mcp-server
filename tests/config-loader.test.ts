@@ -126,4 +126,22 @@ describe('initializeConfigLoader — success', () => {
     expect(getConfig()).toBe(before);
     expect('/ignored/{id}' in getConfig().schemas).toBe(false);
   });
+
+  it('does not reload when stopWatching lands during the debounce window', async () => {
+    // Restart watching — the test above stopped it.
+    await writeFile(configPath, JSON.stringify(config()), 'utf-8');
+    await initializeConfigLoader(configPath);
+    const before = getConfig();
+
+    // Change the file, then abort part-way through the 100ms debounce. A
+    // reload that is already in flight must not land after stopWatching().
+    await writeFile(configPath, JSON.stringify(config({ '/mid-debounce/{id}': { schema: {} } })), 'utf-8');
+    await new Promise(r => setTimeout(r, 20));
+    stopWatching();
+
+    await new Promise(r => setTimeout(r, 600));
+
+    expect(getConfig()).toBe(before);
+    expect('/mid-debounce/{id}' in getConfig().schemas).toBe(false);
+  });
 });

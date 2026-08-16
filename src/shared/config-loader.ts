@@ -26,15 +26,28 @@ export async function initializeConfigLoader(path: string): Promise<void> {
 
   watchController = new AbortController();
 
+  // Captured per watcher: a later initializeConfigLoader() replaces
+  // watchController, and this loop still needs to see its own abort.
+  const { signal } = watchController;
+
   // Watch for changes
   (async () => {
     try {
-      const watcher = watch(path, { signal: watchController!.signal });
+      const watcher = watch(path, { signal });
 
       for await (const event of watcher) {
         if (event.eventType === 'change') {
           // Debounce: wait 100ms before reloading
           await new Promise(resolve => setTimeout(resolve, 100));
+
+          // stopWatching() can land while we are debouncing — and on Linux a
+          // single save often produces two change events, so there is usually
+          // a second one queued behind the first. Without this check a reload
+          // still fires after the caller believes watching has stopped.
+          if (signal.aborted) {
+            return;
+          }
+
           try {
             await reloadConfig();
             console.error('[Config] Schema file changed, reloaded');
