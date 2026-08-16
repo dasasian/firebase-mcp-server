@@ -6,9 +6,13 @@ import {
   extractCollectionPath,
   getSchemaCollectionPaths,
   clearDiscoveryCache,
+  onResourceListChanged,
 } from '../src/shared/resource-discovery.js';
 
 beforeEach(() => {
+  // Detach before clearing, so the clear itself is not counted by a listener
+  // left over from the previous test.
+  onResourceListChanged(null);
   clearDiscoveryCache();
 });
 
@@ -133,6 +137,85 @@ describe('trackDocumentAccess / getMRUDocuments', () => {
     trackDocumentAccess('users/u1');
     clearDiscoveryCache();
     expect(getMRUDocuments()).toEqual([]);
+  });
+});
+
+describe('onResourceListChanged', () => {
+  let fired = 0;
+
+  beforeEach(() => {
+    fired = 0;
+    onResourceListChanged(() => {
+      fired++;
+    });
+  });
+
+  afterEach(() => {
+    onResourceListChanged(null);
+  });
+
+  it('fires when a document joins the list', () => {
+    trackDocumentAccess('users/u1');
+    expect(fired).toBe(1);
+  });
+
+  it('fires once per new document', () => {
+    trackDocumentAccess('users/u1');
+    trackDocumentAccess('users/u2');
+    expect(fired).toBe(2);
+  });
+
+  it('stays quiet when a known document is read again', () => {
+    trackDocumentAccess('users/u1');
+    fired = 0;
+
+    trackDocumentAccess('users/u1');
+    trackDocumentAccess('users/u1');
+
+    expect(fired).toBe(0);
+  });
+
+  it('fires on the eviction that drops a document off the end', () => {
+    for (let i = 0; i < 50; i++) {
+      trackDocumentAccess(`users/u${i}`);
+    }
+    fired = 0;
+
+    // The 51st both adds a URI and evicts one — still a single change.
+    trackDocumentAccess('users/one-too-many');
+    expect(fired).toBe(1);
+    expect(getMRUDocuments()).toHaveLength(50);
+  });
+
+  it('fires when the cache is cleared', () => {
+    trackDocumentAccess('users/u1');
+    fired = 0;
+
+    clearDiscoveryCache();
+    expect(fired).toBe(1);
+  });
+
+  it('stays quiet when clearing an already-empty cache', () => {
+    clearDiscoveryCache();
+    expect(fired).toBe(0);
+  });
+
+  it('stops firing once detached', () => {
+    onResourceListChanged(null);
+    trackDocumentAccess('users/u1');
+    expect(fired).toBe(0);
+  });
+
+  it('replaces the listener rather than adding a second one', () => {
+    let other = 0;
+    onResourceListChanged(() => {
+      other++;
+    });
+
+    trackDocumentAccess('users/u1');
+
+    expect(fired).toBe(0);
+    expect(other).toBe(1);
   });
 });
 

@@ -30,6 +30,27 @@ const MAX_MRU_DOCUMENTS = 50;
 // Cache TTL from environment or default to 5 minutes
 const CACHE_TTL = parseInt(process.env.FIRESTORE_DISCOVERY_CACHE_TTL || '300') * 1000;
 
+let listChangedListener: (() => void) | null = null;
+
+/**
+ * Be told when the set of resources this module offers actually changes, so
+ * the server can send `notifications/resources/list_changed`.
+ *
+ * "Changes" means a URI appearing or disappearing. Re-reading a document the
+ * list already holds bumps its access count and reorders it, but the client
+ * loses nothing by not hearing about that — so it does not fire, and a batch
+ * read of known documents stays quiet instead of spamming the client.
+ *
+ * @param listener - called synchronously on change; pass null to detach.
+ */
+export function onResourceListChanged(listener: (() => void) | null): void {
+  listChangedListener = listener;
+}
+
+function notifyListChanged(): void {
+  listChangedListener?.();
+}
+
 /**
  * Get all collections with caching
  */
@@ -55,11 +76,22 @@ export async function getDiscoveredCollections(): Promise<string[]> {
   const collections = await db.listCollections();
   const collectionIds = collections.map(c => c.id);
 
+  // A refresh that returns the same collections is not a change worth telling
+  // the client about.
+  const changed =
+    !discoveredCollectionsCache ||
+    discoveredCollectionsCache.collections.length !== collectionIds.length ||
+    discoveredCollectionsCache.collections.some((id, i) => id !== collectionIds[i]);
+
   // Cache results
   discoveredCollectionsCache = {
     collections: collectionIds,
     timestamp: now,
   };
+
+  if (changed) {
+    notifyListChanged();
+  }
 
   console.error(`[Discovery] Found ${collectionIds.length} collections (cached for ${CACHE_TTL / 1000}s)`);
 
@@ -90,8 +122,13 @@ export function trackDocumentAccess(path: string): void {
     });
   }
 
+  // A brand new document adds a URI; an eviction below removes one. Either
+  // way the client's copy of the list is now wrong.
+  let changed = !existing;
+
   // Enforce max limit by evicting least used
   if (mruDocuments.size > MAX_MRU_DOCUMENTS) {
+    changed = true;
     const sorted = Array.from(mruDocuments.values()).sort((a, b) => {
       // Sort by access count desc, then by last accessed desc
       if (a.accessCount !== b.accessCount) {
@@ -105,6 +142,10 @@ export function trackDocumentAccess(path: string): void {
     sorted.slice(0, MAX_MRU_DOCUMENTS).forEach(doc => {
       mruDocuments.set(doc.path, doc);
     });
+  }
+
+  if (changed) {
+    notifyListChanged();
   }
 }
 
@@ -177,6 +218,12 @@ export function getSchemaCollectionPaths(
  * Clear discovery cache (useful for testing)
  */
 export function clearDiscoveryCache(): void {
+  const hadResources = discoveredCollectionsCache !== null || mruDocuments.size > 0;
+
   discoveredCollectionsCache = null;
   mruDocuments.clear();
+
+  if (hadResources) {
+    notifyListChanged();
+  }
 }

@@ -11,6 +11,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
@@ -18,7 +19,8 @@ import {
 import { initializeConfigLoader, getConfig, isInitialized } from './shared/config-loader.js';
 import { initializeIndexLoader } from './shared/index-loader.js';
 import { initializeFirebase } from './shared/firebase.js';
-import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, trackDocumentAccess } from './shared/resource-discovery.js';
+import { getDiscoveredCollections, getSchemaCollectionPaths, getMRUDocuments, trackDocumentAccess, onResourceListChanged } from './shared/resource-discovery.js';
+import { getCollectionPath } from './shared/path-matcher.js';
 import { initializeLoggingSchemaLoader } from './shared/logging-schema-loader.js';
 
 // The tool table: handlers, safety annotations, and output shapes
@@ -44,7 +46,9 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
-      resources: {},
+      // listChanged: the MRU document list and the auto-discovered collection
+      // list both move while the server runs.
+      resources: { listChanged: true },
     },
   }
 );
@@ -77,17 +81,29 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
   const knownCollections = new Set<string>();
 
   // 1. Add schema-based resources (rich metadata)
+  //
+  // A schema path like "/users/{userId}" describes a shape, not a document, so
+  // it is advertised through resources/templates/list. What belongs here is the
+  // collection it lives in — "firestore://users/*" — which the read handler can
+  // actually serve. Nested schemas such as "/posts/{postId}/comments/{id}" have
+  // no browsable collection until a parent id is chosen, so they are templates
+  // only.
   if (isInitialized()) {
     const config = getConfig();
     const schemaCollections = getSchemaCollectionPaths(config.schemas);
 
     for (const [path, definition] of Object.entries(config.schemas)) {
       const cleanPath = path.replace(/^\/+/, '');
+      const collectionPath = getCollectionPath(cleanPath);
+
+      if (!collectionPath || collectionPath.includes('{')) {
+        continue;
+      }
 
       resources.push({
-        uri: `firestore://${cleanPath}`,
-        name: `📋 ${definition.description || cleanPath}`,
-        description: `Schema-validated collection`,
+        uri: `firestore://${collectionPath}/*`,
+        name: `📋 ${definition.description || collectionPath}`,
+        description: 'Schema-validated collection',
         mimeType: 'application/json',
       });
     }
@@ -120,6 +136,37 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
   resources.push(...mruDocs);
 
   return { resources };
+});
+
+/**
+ * List resource templates (@ mention support for documents that are not in the
+ * recently-used list yet)
+ *
+ * Each schema path becomes an RFC 6570 template — "/users/{userId}" is already
+ * in that syntax — so a client can build a URI for any document without the
+ * server having to enumerate them. These were previously published as concrete
+ * resources, which meant reading one looked up a document whose id was the
+ * literal text "{userId}" and always failed.
+ */
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+  if (!isInitialized()) {
+    return { resourceTemplates: [] };
+  }
+
+  const config = getConfig();
+
+  const resourceTemplates = Object.entries(config.schemas).map(([path, definition]) => {
+    const cleanPath = path.replace(/^\/+/, '');
+
+    return {
+      uriTemplate: `firestore://${cleanPath}`,
+      name: `📋 ${definition.description || cleanPath}`,
+      description: `Schema-validated document at ${cleanPath}`,
+      mimeType: 'application/json',
+    };
+  });
+
+  return { resourceTemplates };
 });
 
 /**
@@ -233,6 +280,29 @@ function errorResult(message: string) {
 }
 
 /**
+ * Tell the client its copy of the resource list is out of date.
+ *
+ * Coalesced onto the next tick: exporting a collection tracks every document
+ * it touched, and the client only needs one notification for the batch.
+ */
+function watchResourceList() {
+  let pending = false;
+
+  onResourceListChanged(() => {
+    if (pending) return;
+    pending = true;
+
+    setTimeout(() => {
+      pending = false;
+      server.sendResourceListChanged().catch(error => {
+        // A client that never connected, or has gone away, is not fatal.
+        console.error('[Resources] Failed to send list_changed:', error);
+      });
+    }, 0);
+  });
+}
+
+/**
  * Start the server
  */
 async function main() {
@@ -308,6 +378,9 @@ async function main() {
     // Start stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
+
+    // Only start notifying once there is a client to notify.
+    watchResourceList();
 
     console.error('[MCP] Server ready');
   } catch (error) {

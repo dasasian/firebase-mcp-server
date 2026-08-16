@@ -101,6 +101,34 @@ firebase:firestore://<path>
 | `firebase:firestore://users/*` | Users collection (up to 10 docs) |
 | `firebase:firestore://posts/*` | Posts collection (up to 10 docs) |
 
+### Resource Templates
+
+Each schema path is also published as a resource template, so a client can
+address any document in that collection without the server listing them all:
+
+| Template | Built from schema path |
+|---|---|
+| `firestore://users/{userId}` | `/users/{userId}` |
+| `firestore://posts/{postId}/comments/{commentId}` | `/posts/{postId}/comments/{commentId}` |
+
+Fill in the placeholder to get a real URI — `firestore://users/user-123`.
+
+Templates come from `resources/templates/list`; the concrete `firestore://users/*`
+browse entries come from `resources/list`. Nested schemas appear only as
+templates, because there is no browsable collection until a parent id is chosen.
+
+### Change Notifications
+
+The server declares the `resources.listChanged` capability and sends
+`notifications/resources/list_changed` when the resource list actually changes —
+a document joining the recently-used list, an eviction dropping one off the end,
+or auto-discovery finding a different set of collections.
+
+Re-reading a document already in the list does not notify. It only bumps that
+document's access count, and a batch export would otherwise fire a notification
+per document. Notifications are coalesced onto the next tick, so one batch
+produces one notification.
+
 ## Schema-Based vs Discovered
 
 ### Schema-Based Collections (📋)
