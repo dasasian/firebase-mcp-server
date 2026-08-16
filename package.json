@@ -1,18 +1,34 @@
 {
-  "name": "firebase-mcp-server",
+  "name": "@dasasian/firebase-mcp-server",
+  "mcpName": "io.github.dasasian/firebase-mcp-server",
   "version": "1.0.0",
   "description": "General-purpose MCP server for Firebase (Firestore, Storage, Auth) with schema-driven validation and context-efficient tools",
   "type": "module",
   "main": "dist/index.js",
+  "homepage": "https://github.com/dasasian/firebase-mcp-server#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dasasian/firebase-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dasasian/firebase-mcp-server/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "firebase-mcp": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
     "dev": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
-    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -23,7 +39,7 @@
     "claude-code",
     "model-context-protocol"
   ],
-  "author": "",
+  "author": "Dasasian",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/logging": "^11.2.0",

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dasasian/firebase-mcp-server",
+  "description": "MCP server for Firebase — Firestore, Storage, Auth, and Cloud Logging, with schema validation.",
+  "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/dasasian/firebase-mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@dasasian/firebase-mcp-server",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

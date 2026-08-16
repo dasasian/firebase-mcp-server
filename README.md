@@ -1,5 +1,12 @@
 # Firebase MCP Server
 
+<p>
+  <a href="https://www.npmjs.com/package/@dasasian/firebase-mcp-server"><img alt="npm" src="https://img.shields.io/npm/v/@dasasian/firebase-mcp-server?style=flat-square&color=235a9b"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-235a9b?style=flat-square"></a>
+  <a href="https://modelcontextprotocol.io"><img alt="Model Context Protocol server" src="https://img.shields.io/badge/MCP-server-235a9b?style=flat-square"></a>
+  <img alt="Node 18+" src="https://img.shields.io/badge/node-18%2B-5fa04e?style=flat-square">
+</p>
+
 General-purpose Model Context Protocol (MCP) server for Firebase (Firestore, Storage, Auth, Functions Logging) with schema-driven validation and context-efficient tools.
 
 ## Features
@@ -16,16 +23,35 @@ General-purpose Model Context Protocol (MCP) server for Firebase (Firestore, Sto
 - **Index-aware queries** - Validates queries against `firestore.indexes.json`
 - **Functions logging** - SQL-like queries for Cloud Functions logs with aggregations and label filtering
 
-## Quick Start
+## Install
+
+Add it to your MCP client (e.g. Claude Code) — runs via `npx`, no global install needed:
+
+```jsonc
+{
+  "mcpServers": {
+    "firebase": {
+      "command": "npx",
+      "args": ["-y", "@dasasian/firebase-mcp-server", "start", "./firestore-schemas.json"]
+    }
+  }
+}
+```
+
+`start` takes an optional schema config path (default `./firestore-schemas.json`) and an optional indexes path (default `./firestore.indexes.json`) — see [Schema Format](#schema-format). Firebase auth uses Application Default Credentials.
+
+Or install the CLI globally:
 
 ```bash
-# Install dependencies
+npm install -g @dasasian/firebase-mcp-server
+firebase-mcp start ./firestore-schemas.json
+```
+
+## Development (from source)
+
+```bash
 npm install
-
-# Build
 npm run build
-
-# Run CLI
 npm run cli -- start --config ./examples/neatpour/firestore-schemas.json
 ```
 
