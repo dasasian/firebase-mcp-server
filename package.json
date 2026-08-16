@@ -1,7 +1,7 @@
 {
   "name": "@dasasian/firebase-mcp-server",
   "mcpName": "io.github.dasasian/firebase-mcp-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "General-purpose MCP server for Firebase (Firestore, Storage, Auth) with schema-driven validation and context-efficient tools",
   "type": "module",
   "main": "dist/index.js",

@@ -11,7 +11,7 @@ const program = new Command();
 program
   .name('firebase-mcp')
   .description('Firebase MCP Server - Model Context Protocol for Firebase (Firestore, Storage, Auth)')
-  .version('1.0.0');
+  .version('1.1.0');
 
 program
   .command('start')
